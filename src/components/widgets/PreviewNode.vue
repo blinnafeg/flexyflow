@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, inject, shallowRef } from 'vue'
+import type { ShallowRef } from 'vue'
 import type { WidgetNode, RichTextSpan } from '@/types/widget-builder'
 import type { DataBinding, ListViewConfig, WidgetElementsV2 } from '@/types/list-view'
 import { nodeToStyle } from '@/composables/useWidgetCss'
@@ -53,7 +54,11 @@ const listItemBindings = ref<DataBinding[]>([])
 const listLoading      = ref(false)
 const listError        = ref<string | null>(null)
 
-const dataService = new DataSourceService()
+// Injected from PagePreviewView (per-project Supabase client); falls back to global
+const dataService = inject<ShallowRef<DataSourceService>>(
+  'dataService',
+  shallowRef(new DataSourceService()),
+)
 
 /**
  * Deep-clone a node tree and substitute bound props from a data row.
@@ -90,9 +95,9 @@ onMounted(async () => {
   listError.value = null
 
   try {
-    // 1. Fetch rows
+    // 1. Fetch rows (uses injected per-project data service)
     const limit = cfg.pagination.enabled ? cfg.pagination.pageSize : undefined
-    listRows.value = await dataService.fetchData(cfg.dataSource.source, {
+    listRows.value = await dataService.value.fetchData(cfg.dataSource.source, {
       filters: cfg.filters,
       sorting: cfg.sorting,
       limit,

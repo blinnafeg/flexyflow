@@ -1,16 +1,17 @@
 <script setup lang="ts">
-import { onMounted } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useProjectsStore } from '@/stores/projects.store'
 import { Card, CardContent } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
-import { LayoutGrid, FileText, Puzzle, Zap, ArrowRight, Plus } from 'lucide-vue-next'
+import { LayoutGrid, FileText, Puzzle, Zap, ArrowRight, Database } from 'lucide-vue-next'
+import DatabasePanel from '@/components/projects/DatabasePanel.vue'
 
 const route = useRoute()
 const router = useRouter()
 const store = useProjectsStore()
 
 const projectId = route.params.id as string
+const dbOpen = ref(false)
 
 onMounted(async () => {
   await store.loadProjects()
@@ -63,6 +64,7 @@ onMounted(async () => {
           <ArrowRight class="size-4 text-muted-foreground" />
         </CardContent>
       </Card>
+
       <!-- Widgets -->
       <Card class="cursor-pointer hover:bg-accent/30 transition-colors" @click="router.push(`/projects/${projectId}/widgets`)">
         <CardContent class="pt-5 flex items-center justify-between">
@@ -94,6 +96,35 @@ onMounted(async () => {
           <ArrowRight class="size-4 text-muted-foreground" />
         </CardContent>
       </Card>
+
+      <!-- Database — spans full width -->
+      <Card class="cursor-pointer hover:bg-accent/30 transition-colors col-span-2" @click="dbOpen = true">
+        <CardContent class="pt-5 flex items-center justify-between">
+          <div class="flex items-center gap-3">
+            <div class="size-10 rounded-lg bg-orange-500/10 flex items-center justify-center">
+              <Database class="size-5 text-orange-500" />
+            </div>
+            <div>
+              <p class="font-semibold">База данных</p>
+              <p class="text-sm text-muted-foreground">
+                <template v-if="store.activeProject?.supabaseUrl">
+                  Supabase подключена · {{ store.activeProject.supabaseUrl.replace('https://', '') }}
+                </template>
+                <template v-else>
+                  Не подключена — нажмите для настройки
+                </template>
+              </p>
+            </div>
+          </div>
+          <ArrowRight class="size-4 text-muted-foreground" />
+        </CardContent>
+      </Card>
     </div>
+
+    <!-- Database connection panel -->
+    <DatabasePanel
+      v-model:open="dbOpen"
+      :project="store.activeProject"
+    />
   </div>
 </template>

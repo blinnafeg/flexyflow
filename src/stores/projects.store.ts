@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { Project, Page, Layout } from '@/types'
 import { supabase } from '@/lib/supabase'
+import { DataSourceService } from '@/services/DataSourceService'
 
 export const useProjectsStore = defineStore('projects', () => {
   const projects = ref<Project[]>([])
@@ -166,9 +167,38 @@ export const useProjectsStore = defineStore('projects', () => {
       id: row.id as string,
       name: row.name as string,
       description: row.description as string | undefined,
+      supabaseUrl: (row.supabase_url as string) ?? '',
+      supabaseAnonKey: (row.supabase_anon_key as string) ?? '',
       createdAt: row.created_at as string,
       updatedAt: row.updated_at as string,
     }
+  }
+
+  // ── Project DB connection ─────────────────────────────────────────────────
+
+  async function updateProjectDb(id: string, url: string, anonKey: string): Promise<void> {
+    const { error: e } = await supabase
+      .from('ff_projects')
+      .update({ supabase_url: url, supabase_anon_key: anonKey })
+      .eq('id', id)
+    if (e) throw e
+    const idx = projects.value.findIndex(p => p.id === id)
+    if (idx !== -1) {
+      projects.value[idx].supabaseUrl = url
+      projects.value[idx].supabaseAnonKey = anonKey
+    }
+  }
+
+  /**
+   * Returns a DataSourceService configured with the project's own Supabase credentials.
+   * Falls back to the global client if the project has no connected database.
+   */
+  function getDataService(projectId: string): DataSourceService {
+    const p = projects.value.find(x => x.id === projectId)
+    if (p?.supabaseUrl && p?.supabaseAnonKey) {
+      return new DataSourceService({ url: p.supabaseUrl, anonKey: p.supabaseAnonKey })
+    }
+    return new DataSourceService()
   }
 
   function mapPage(row: Record<string, unknown>): Page {
@@ -217,5 +247,7 @@ export const useProjectsStore = defineStore('projects', () => {
     createLayout,
     updateLayout,
     deleteLayout,
+    updateProjectDb,
+    getDataService,
   }
 })

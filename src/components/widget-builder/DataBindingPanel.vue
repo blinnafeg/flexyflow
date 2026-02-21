@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import { useWidgetBuilderStore } from '@/stores/widget-builder.store'
-import { DataSourceService } from '@/services/DataSourceService'
+import { useProjectsStore } from '@/stores/projects.store'
 import type { ColumnInfo, DataBindingProperty } from '@/types/list-view'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
@@ -13,7 +13,11 @@ import { RefreshCw, Unlink } from 'lucide-vue-next'
 import { toast } from 'vue-sonner'
 
 const store = useWidgetBuilderStore()
-const dataService = new DataSourceService()
+const projectsStore = useProjectsStore()
+
+const dataService = computed(() =>
+  projectsStore.getDataService(store.widget?.projectId ?? '')
+)
 
 const node = computed(() => store.selectedNode)
 const meta = computed(() => store.listItemMeta)
@@ -27,7 +31,7 @@ async function loadColumns() {
   if (!src) return
   loadingCols.value = true
   try {
-    columns.value = await dataService.getColumns(src)
+    columns.value = await dataService.value.getColumns(src)
   } catch (e: unknown) {
     toast.error((e as Error).message)
   } finally {

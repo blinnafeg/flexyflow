@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { useWidgetBuilderStore } from '@/stores/widget-builder.store'
-import { DataSourceService } from '@/services/DataSourceService'
+import { useProjectsStore } from '@/stores/projects.store'
 import { supabase } from '@/lib/supabase'
 import type { ListViewConfig, FilterCondition, SortOption, ColumnInfo } from '@/types/list-view'
 import { Input } from '@/components/ui/input'
@@ -16,9 +16,14 @@ import { Trash2, Plus, RefreshCw } from 'lucide-vue-next'
 import { toast } from 'vue-sonner'
 
 const store = useWidgetBuilderStore()
-const dataService = new DataSourceService()
+const projectsStore = useProjectsStore()
 
 const node = computed(() => store.selectedNode)
+
+// Data service for the current project (uses project's Supabase credentials)
+const dataService = computed(() =>
+  projectsStore.getDataService(store.widget?.projectId ?? '')
+)
 
 // Shortcut to read listViewConfig with defaults
 const cfg = computed((): ListViewConfig => node.value?.props.listViewConfig ?? {
@@ -36,6 +41,21 @@ function patchCfg(patch: Partial<ListViewConfig>) {
   })
 }
 
+// ── Table list from project's DB ───────────────────────────────────────────
+const availableTables = ref<string[]>([])
+const tablesLoading   = ref(false)
+
+async function loadAvailableTables() {
+  tablesLoading.value = true
+  try {
+    availableTables.value = await dataService.value.getTables()
+  } catch {
+    availableTables.value = []
+  } finally {
+    tablesLoading.value = false
+  }
+}
+
 // ── Column introspection ───────────────────────────────────────────────────
 const columns = ref<ColumnInfo[]>([])
 const loadingCols = ref(false)
@@ -45,7 +65,7 @@ async function loadColumns() {
   if (!src) return
   loadingCols.value = true
   try {
-    columns.value = await dataService.getColumns(src)
+    columns.value = await dataService.value.getColumns(src)
     toast.success(`Загружено ${columns.value.length} полей`)
   } catch (e: unknown) {
     toast.error((e as Error).message)
@@ -68,7 +88,10 @@ async function loadWidgets() {
   availableWidgets.value = data ?? []
 }
 
-onMounted(loadWidgets)
+onMounted(() => {
+  loadWidgets()
+  loadAvailableTables()
+})
 
 // ── Filters ───────────────────────────────────────────────────────────────
 function addFilter() {
@@ -123,12 +146,39 @@ const fieldOptions = computed(() =>
       <Label class="text-[11px] font-semibold uppercase text-muted-foreground tracking-wider">
         Источник данных
       </Label>
-      <Input
-        placeholder="Имя таблицы..."
-        class="h-7 text-xs"
-        :model-value="cfg.dataSource.source"
-        @update:model-value="patchCfg({ dataSource: { ...cfg.dataSource, source: $event } })"
-      />
+
+      <!-- Dropdown if tables available from connected DB -->
+      <template v-if="availableTables.length > 0">
+        <Select
+          :model-value="cfg.dataSource.source || '__none__'"
+          @update:model-value="patchCfg({ dataSource: { ...cfg.dataSource, source: $event === '__none__' ? '' : $event } })"
+        >
+          <SelectTrigger class="h-7 text-xs">
+            <SelectValue placeholder="Выберите таблицу..." />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__none__">— Выберите таблицу —</SelectItem>
+            <SelectItem v-for="t in availableTables" :key="t" :value="t">
+              {{ t }}
+            </SelectItem>
+          </SelectContent>
+        </Select>
+      </template>
+
+      <!-- Fallback: text input (no DB connected or loading) -->
+      <template v-else>
+        <Input
+          placeholder="Имя таблицы..."
+          class="h-7 text-xs"
+          :disabled="tablesLoading"
+          :model-value="cfg.dataSource.source"
+          @update:model-value="patchCfg({ dataSource: { ...cfg.dataSource, source: $event } })"
+        />
+        <p v-if="!tablesLoading" class="text-[11px] text-muted-foreground">
+          Подключите базу данных в настройках проекта для выбора таблицы из списка.
+        </p>
+      </template>
+
       <Button
         variant="outline" size="sm" class="h-7 w-full text-xs"
         :disabled="loadingCols || !cfg.dataSource.source.trim()"

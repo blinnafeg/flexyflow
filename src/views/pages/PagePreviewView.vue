@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, shallowRef, provide } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { Layout, GridSlot } from '@/types'
 import { supabase } from '@/lib/supabase'
+import { DataSourceService } from '@/services/DataSourceService'
 import WidgetRenderer from '@/components/widgets/WidgetRenderer.vue'
 
 const route  = useRoute()
@@ -15,6 +16,10 @@ const layout  = ref<Layout | null>(null)
 
 // slotName → widgetId
 const slotWidgetIds = ref<Record<string, string>>({})
+
+// Per-project data service — provided to all nested WidgetRenderer / PreviewNode
+const pageDataService = shallowRef<DataSourceService>(new DataSourceService())
+provide('dataService', pageDataService)
 
 const gridStyle = computed(() => {
   const cfg = layout.value?.config
@@ -44,6 +49,21 @@ onMounted(async () => {
       .eq('id', pageId)
       .single()
     if (pe) throw pe
+
+    // Load project credentials for per-project data service
+    if (pageData.project_id) {
+      const { data: projData } = await supabase
+        .from('ff_projects')
+        .select('supabase_url, supabase_anon_key')
+        .eq('id', pageData.project_id)
+        .single()
+      if (projData?.supabase_url && projData?.supabase_anon_key) {
+        pageDataService.value = new DataSourceService({
+          url: projData.supabase_url as string,
+          anonKey: projData.supabase_anon_key as string,
+        })
+      }
+    }
 
     // Load layout
     if (pageData.layout_id) {

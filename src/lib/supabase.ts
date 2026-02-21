@@ -8,3 +8,8 @@ if (!supabaseUrl || !supabaseAnonKey) {
 }
 
 export const supabase = createClient(supabaseUrl ?? '', supabaseAnonKey ?? '')
+
+/** Create a per-project Supabase client with custom credentials. */
+export function createProjectClient(url: string, anonKey: string) {
+  return createClient(url, anonKey)
+}

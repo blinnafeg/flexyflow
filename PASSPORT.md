@@ -432,6 +432,15 @@ const projectIdRef = inject<ComputedRef<string> | Ref<string>>('projectId', ref(
 - **Межвиджетная видимость** — кнопка в Widget A может скрывать элемент в Widget B или весь Widget B (`w:WIDGET_ID`); `WidgetRenderer.vue` проверяет видимость всего виджета
 - **ElementPicker** — выпадающий пикер с `<Teleport to="body">`: текущий виджет + список других виджетов проекта (lazy-загрузка нод); позиционируется через `getBoundingClientRect()`; тематический скроллбар через CSS-переменные shadcn
 
+### Готово и работает ✅ (база данных проекта)
+- **Per-project Supabase** — каждый проект хранит свои `supabase_url` + `supabase_anon_key` в `ff_projects`
+- **DatabasePanel** (`src/components/projects/DatabasePanel.vue`) — Sheet-панель в ProjectDetailView: ввод URL + anon key, кнопка «Подключить», проверка соединения, список таблиц из OpenAPI Supabase
+- **Карточка «База данных»** в ProjectDetailView — статус (не подключена / URL базы), открывает DatabasePanel
+- **`DataSourceService` рефактор** — конструктор принимает `DbCredentials?`; `getTables()` через Supabase OpenAPI `/rest/v1/`; `getDataService(projectId)` в projects.store
+- **ListView таблицы из проекта** — `ListViewConfigPanel` показывает выпадающий список таблиц (из подключённой БД проекта) вместо текстового ввода; fallback — Input, если БД не подключена
+- **Runtime ListView** — `PagePreviewView` загружает credentials проекта → создаёт `DataSourceService` → provides через `shallowRef` → `PreviewNode` инжектирует через `inject('dataService')`
+- **Fallback** — при отсутствии подключения все компоненты используют глобальный Supabase клиент (текущее поведение)
+
 ### Не реализовано / следующие задачи ❌
 - **Назначение виджетов в слоты** страницы (ff_pages.content) — прямое назначение в slot ещё нет
 - **Публичный рендерер** (PublicPageView — рендер страницы для конечного пользователя)
@@ -576,6 +585,20 @@ Service_role JWT генерируется из JWT_SECRET через HMAC-SHA256
 - **ProjectDetailView** — добавлена карточка "Воркфлоу" (Zap icon, синяя)
 - **PageEditorView** — секция "Действия" в панели слота: список воркфлоу виджета + создание
 - build: ✅ 0 ошибок TypeScript
+
+### 2026-02-21 — Per-project Supabase + DatabasePanel (AI: Claude Sonnet 4.6)
+- **SQL миграция**: `ALTER TABLE ff_projects ADD COLUMN supabase_url TEXT DEFAULT '', ADD COLUMN supabase_anon_key TEXT DEFAULT ''`
+- **`src/lib/supabase.ts`** — добавлена `createProjectClient(url, anonKey)` фабрика
+- **`src/types/projects.ts`** — добавлены `supabaseUrl: string`, `supabaseAnonKey: string` в `Project`
+- **`src/stores/projects.store.ts`** — маппинг полей в `mapProject()`, новые функции `updateProjectDb(id, url, key)` и `getDataService(projectId)`
+- **`src/services/DataSourceService.ts`** — рефактор: конструктор принимает `DbCredentials?` (url + anonKey), `this.client` = per-project или global; новый метод `getTables()` через OpenAPI `/rest/v1/`
+- **`src/components/projects/DatabasePanel.vue`** — новый Sheet-компонент: форма URL + anon key (password с глазом), кнопка «Подключить», статус, список таблиц бейджами
+- **`src/views/projects/ProjectDetailView.vue`** — 5-я карточка «База данных» (оранжевая, full-width), открывает DatabasePanel; статус «Подключена / Не подключена»
+- **`src/components/widget-builder/ListViewConfigPanel.vue`** — при наличии tables от проекта → `<Select>` с таблицами; иначе → `<Input>` (fallback); загрузка таблиц через `projectsStore.getDataService()`
+- **`src/components/widget-builder/DataBindingPanel.vue`** — `dataService` теперь из `projectsStore.getDataService()` вместо `new DataSourceService()`
+- **`src/views/pages/PagePreviewView.vue`** — provide `pageDataService` (shallowRef); загружает credentials из `ff_projects` в `onMounted` до снятия loading; обновляет ref после загрузки → дочерние компоненты реагируют реактивно
+- **`src/components/widgets/PreviewNode.vue`** — inject `dataService` (ShallowRef) с fallback; `dataService.value.fetchData()` вместо прямого вызова
+- build: ✅ 0 ошибок TypeScript (2472 модуля)
 
 ### 2026-02-21 — Action System inline + межвиджетная видимость (AI: Claude Sonnet 4.6)
 - **`NodeActions` тип** — добавлен в `src/types/widget-builder.ts`: `Partial<Record<TriggerType, ActionStep[]>>`

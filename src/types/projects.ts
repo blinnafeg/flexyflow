@@ -2,6 +2,8 @@ export interface Project {
   id: string
   name: string
   description?: string
+  supabaseUrl: string
+  supabaseAnonKey: string
   createdAt: string
   updatedAt: string
 }

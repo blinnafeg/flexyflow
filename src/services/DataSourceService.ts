@@ -1,7 +1,40 @@
-import { supabase } from '@/lib/supabase'
+import { supabase, createProjectClient } from '@/lib/supabase'
+import type { SupabaseClient } from '@supabase/supabase-js'
 import type { ColumnInfo, FilterCondition, SortOption } from '@/types/list-view'
 
+export interface DbCredentials {
+  url: string
+  anonKey: string
+}
+
 export class DataSourceService {
+  private client: SupabaseClient
+
+  constructor(private creds?: DbCredentials) {
+    this.client = creds ? createProjectClient(creds.url, creds.anonKey) : supabase
+  }
+
+  /**
+   * List all accessible tables in the project's database via Supabase OpenAPI spec.
+   * Returns [] when no custom credentials are configured (global fallback).
+   */
+  async getTables(): Promise<string[]> {
+    if (!this.creds) return []
+    const res = await fetch(`${this.creds.url}/rest/v1/`, {
+      headers: {
+        apikey: this.creds.anonKey,
+        Authorization: `Bearer ${this.creds.anonKey}`,
+      },
+    })
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`)
+    const spec = await res.json() as { paths?: Record<string, unknown> }
+    return Object.keys(spec.paths ?? {})
+      .filter(p => !p.includes('{') && !p.startsWith('/rpc'))
+      .map(p => p.replace(/^\//, ''))
+      .filter(Boolean)
+      .sort()
+  }
+
   /**
    * Infer columns by fetching a sample row from the table.
    * Works with anon key as long as the table is readable (no RLS blocking).
@@ -9,7 +42,7 @@ export class DataSourceService {
   async getColumns(tableName: string): Promise<ColumnInfo[]> {
     if (!tableName.trim()) return []
 
-    const { data, error } = await supabase
+    const { data, error } = await this.client
       .from(tableName)
       .select('*')
       .limit(1)
@@ -19,7 +52,6 @@ export class DataSourceService {
     }
 
     if (!data || data.length === 0) {
-      // Table exists but is empty — return empty list
       return []
     }
 
@@ -46,7 +78,7 @@ export class DataSourceService {
     },
   ): Promise<Record<string, unknown>[]> {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let query: any = supabase.from(tableName).select('*')
+    let query: any = this.client.from(tableName).select('*')
 
     for (const f of options?.filters ?? []) {
       if (!f.field || !f.value) continue
