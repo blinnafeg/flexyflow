@@ -111,9 +111,12 @@ function spanStyle(span: RichTextSpan): Record<string, string> {
 </script>
 
 <template>
+  <!-- Hidden nodes are skipped in preview/publish -->
+  <template v-if="node.hidden" />
+
   <!-- Column / Row / Container -->
   <div
-    v-if="node.type === 'Column' || node.type === 'Row' || node.type === 'Container'"
+    v-else-if="node.type === 'Column' || node.type === 'Row' || node.type === 'Container'"
     :style="nodeStyle()"
   >
     <PreviewNode

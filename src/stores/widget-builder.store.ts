@@ -2,6 +2,35 @@ import { defineStore } from 'pinia'
 import { ref, computed, watchEffect } from 'vue'
 import { nanoid } from 'nanoid'
 import type { WidgetNode, WidgetType, WidgetNodeProps, WidgetDefinition } from '@/types/widget-builder'
+
+// Deep-clone a node tree with fresh IDs
+function deepCloneNode(node: WidgetNode): WidgetNode {
+  return {
+    ...node,
+    id: nanoid(8),
+    props: JSON.parse(JSON.stringify(node.props)),
+    children: node.children.map(deepCloneNode),
+  }
+}
+
+// Check if 'ancestorId' is an ancestor of 'nodeId' in the tree
+function isAncestorOf(root: WidgetNode, ancestorId: string, nodeId: string): boolean {
+  function check(n: WidgetNode): boolean {
+    if (n.id === nodeId) return true
+    return n.children.some(check)
+  }
+  const ancestor = findNodeInTree(root, ancestorId)
+  return ancestor ? ancestor.children.some(check) : false
+}
+
+function findNodeInTree(node: WidgetNode, id: string): WidgetNode | null {
+  if (node.id === id) return node
+  for (const c of node.children) {
+    const r = findNodeInTree(c, id)
+    if (r) return r
+  }
+  return null
+}
 import type { WidgetKind, ListItemMeta, DataBindingProperty } from '@/types/list-view'
 import {
   createDefaultNode, findNode, findParent, removeNode,
@@ -231,6 +260,77 @@ export const useWidgetBuilderStore = defineStore('widgetBuilder', () => {
     isDirty.value = true
   }
 
+  function wrapIn(id: string, wrapperType: WidgetType) {
+    if (!widget.value || !canHaveChildren(wrapperType)) return
+    if (id === widget.value.root.id) return // cannot wrap root
+    const parent = findParent(widget.value.root, id)
+    if (!parent) return
+    const idx = parent.children.findIndex(c => c.id === id)
+    const node = parent.children[idx]
+    const wrapper = createDefaultNode(wrapperType)
+    wrapper.children.push(node)
+    parent.children.splice(idx, 1, wrapper)
+    selectedId.value = wrapper.id
+    isDirty.value = true
+  }
+
+  function duplicateNode(id: string): string | null {
+    if (!widget.value || id === widget.value.root.id) return null
+    const parent = findParent(widget.value.root, id)
+    if (!parent) return null
+    const idx = parent.children.findIndex(c => c.id === id)
+    const clone = deepCloneNode(parent.children[idx])
+    parent.children.splice(idx + 1, 0, clone)
+    isDirty.value = true
+    return clone.id
+  }
+
+  function moveNode(dragId: string, targetId: string, position: 'before' | 'after' | 'inside') {
+    if (!widget.value || dragId === targetId) return
+    if (dragId === widget.value.root.id) return // cannot move root
+    // Prevent dropping into own descendant
+    if (isAncestorOf(widget.value.root, dragId, targetId)) return
+
+    const draggedParent = findParent(widget.value.root, dragId)
+    if (!draggedParent) return
+
+    if (position === 'inside') {
+      const targetNode = index.value.get(targetId)
+      if (!targetNode || !canHaveChildren(targetNode.type)) return
+      const dragIdx = draggedParent.children.findIndex(c => c.id === dragId)
+      const [draggedNode] = draggedParent.children.splice(dragIdx, 1)
+      targetNode.children.push(draggedNode)
+    } else {
+      const targetParent = findParent(widget.value.root, targetId)
+      if (!targetParent) return
+      const dragIdx = draggedParent.children.findIndex(c => c.id === dragId)
+      const [draggedNode] = draggedParent.children.splice(dragIdx, 1)
+      // Re-find target index (may shift if same parent and drag was before target)
+      const targetIdx = targetParent.children.findIndex(c => c.id === targetId)
+      if (targetIdx === -1) {
+        draggedParent.children.splice(dragIdx, 0, draggedNode) // revert
+        return
+      }
+      const insertIdx = position === 'before' ? targetIdx : targetIdx + 1
+      targetParent.children.splice(insertIdx, 0, draggedNode)
+    }
+    isDirty.value = true
+  }
+
+  function toggleNodeVisibility(id: string) {
+    const node = index.value.get(id)
+    if (!node) return
+    node.hidden = !node.hidden
+    isDirty.value = true
+  }
+
+  function toggleNodeLock(id: string) {
+    const node = index.value.get(id)
+    if (!node) return
+    node.locked = !node.locked
+    isDirty.value = true
+  }
+
   function $reset() {
     widget.value = null
     selectedId.value = null
@@ -247,5 +347,7 @@ export const useWidgetBuilderStore = defineStore('widgetBuilder', () => {
     updateProps, renameNode,
     setWidgetKind, updateListItemMeta, setDataBinding, removeDataBinding,
     addChild, addSibling, deleteNode, moveUp, moveDown, wrapInColumn,
+    wrapIn, duplicateNode, moveNode,
+    toggleNodeVisibility, toggleNodeLock,
   }
 })

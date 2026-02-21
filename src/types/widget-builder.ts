@@ -109,6 +109,8 @@ export interface WidgetNode {
   name: string
   props: WidgetNodeProps
   children: WidgetNode[]
+  hidden?: boolean   // hides on canvas in editor (skipped in preview)
+  locked?: boolean   // blocks accidental editing from tree action buttons
 }
 
 export interface WidgetDefinition {

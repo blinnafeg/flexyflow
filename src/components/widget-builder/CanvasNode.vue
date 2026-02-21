@@ -13,7 +13,9 @@ const props = defineProps<{
 
 const store = useWidgetBuilderStore()
 const isSelected = computed(() => props.editorMode && store.selectedId === props.node.id)
-const nodeStyle = computed(() => nodeToStyle(props.node))
+const nodeStyle  = computed(() => nodeToStyle(props.node))
+const isHidden   = computed(() => !!props.node.hidden)
+const isLocked   = computed(() => !!props.node.locked)
 const resolvedIcon = computed(() =>
   props.node.type === 'Icon'
     ? resolveIcon(props.node.props.iconPackage, props.node.props.iconName)
@@ -25,6 +27,15 @@ function onClick(e: MouseEvent) {
   e.stopPropagation()
   store.select(props.node.id)
 }
+
+// Classes applied to every rendered node in editor mode
+const editorOverlayClass = computed(() => {
+  if (!props.editorMode) return ''
+  const parts: string[] = []
+  if (isHidden.value)  parts.push('opacity-30')
+  if (isLocked.value && !isHidden.value) parts.push('outline-dashed outline-1 outline-amber-400/60')
+  return parts.join(' ')
+})
 
 function spanStyle(span: RichTextSpan): Record<string, string> {
   const s: Record<string, string> = {}
@@ -46,7 +57,7 @@ function spanStyle(span: RichTextSpan): Record<string, string> {
   <div
     v-if="node.type === 'Column' || node.type === 'Row' || node.type === 'Container'"
     :style="nodeStyle"
-    :class="isSelected ? 'outline outline-2 outline-blue-500' : ''"
+    :class="[isSelected ? 'outline outline-2 outline-blue-500' : '', editorOverlayClass]"
     @click="onClick"
   >
     <CanvasNode
@@ -68,7 +79,7 @@ function spanStyle(span: RichTextSpan): Record<string, string> {
   <span
     v-else-if="node.type === 'Text'"
     :style="nodeStyle"
-    :class="isSelected ? 'outline outline-2 outline-blue-500' : ''"
+    :class="[isSelected ? 'outline outline-2 outline-blue-500' : '', editorOverlayClass]"
     @click="onClick"
   >{{ node.props.text || '' }}</span>
 
@@ -76,7 +87,7 @@ function spanStyle(span: RichTextSpan): Record<string, string> {
   <button
     v-else-if="node.type === 'Button'"
     :style="{ ...nodeStyle, cursor: 'pointer', border: 'none' }"
-    :class="isSelected ? 'outline outline-2 outline-blue-500' : ''"
+    :class="[isSelected ? 'outline outline-2 outline-blue-500' : '', editorOverlayClass]"
     @click="onClick"
   >{{ node.props.text || 'Button' }}</button>
 
@@ -85,7 +96,7 @@ function spanStyle(span: RichTextSpan): Record<string, string> {
     v-else-if="node.type === 'TextField'"
     :placeholder="node.props.placeholder || ''"
     :style="{ ...nodeStyle, outline: 'none' }"
-    :class="isSelected ? 'ring-2 ring-blue-500' : ''"
+    :class="[isSelected ? 'ring-2 ring-blue-500' : '', editorOverlayClass]"
     readonly
     @click="onClick"
   />
@@ -94,7 +105,7 @@ function spanStyle(span: RichTextSpan): Record<string, string> {
   <p
     v-else-if="node.type === 'RichText'"
     :style="nodeStyle"
-    :class="isSelected ? 'outline outline-2 outline-blue-500' : ''"
+    :class="[isSelected ? 'outline outline-2 outline-blue-500' : '', editorOverlayClass]"
     @click="onClick"
   >
     <span
@@ -108,7 +119,7 @@ function spanStyle(span: RichTextSpan): Record<string, string> {
   <div
     v-else-if="node.type === 'Icon'"
     :style="nodeStyle"
-    :class="['inline-flex items-center justify-center', isSelected ? 'outline outline-2 outline-blue-500' : '']"
+    :class="['inline-flex items-center justify-center', isSelected ? 'outline outline-2 outline-blue-500' : '', editorOverlayClass]"
     @click="onClick"
   >
     <component
@@ -133,6 +144,7 @@ function spanStyle(span: RichTextSpan): Record<string, string> {
       isSelected
         ? 'border-blue-500 bg-blue-500/5'
         : 'border-blue-300/60 bg-blue-50/30 hover:bg-blue-50/60 dark:bg-blue-900/10',
+      editorOverlayClass,
     ]"
     @click="onClick"
   >
