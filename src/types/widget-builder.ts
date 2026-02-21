@@ -1,4 +1,4 @@
-export type WidgetType = 'Column' | 'Row' | 'Container' | 'Text' | 'Button' | 'TextField' | 'RichText' | 'ListView'
+export type WidgetType = 'Column' | 'Row' | 'Container' | 'Text' | 'Button' | 'TextField' | 'RichText' | 'ListView' | 'Icon'
 
 export type SizeUnit = 'px' | '%' | 'auto'
 
@@ -94,6 +94,13 @@ export interface WidgetNodeProps {
 
   // ListView-specific config (only for nodes of type 'ListView')
   listViewConfig?: ListViewConfig
+
+  // Icon-specific (only for nodes of type 'Icon')
+  iconName?: string         // e.g. 'Star'
+  iconPackage?: string      // e.g. 'lucide'
+  iconSize?: number         // px, e.g. 24
+  iconColor?: string        // hex/css, '' = inherit currentColor from CSS
+  iconStrokeWidth?: number  // Lucide stroke-width, default 2
 }
 
 export interface WidgetNode {

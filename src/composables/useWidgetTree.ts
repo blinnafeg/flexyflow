@@ -31,6 +31,17 @@ const DEFAULT_RICH_SPANS = (): RichTextSpan[] => [
 ]
 
 const DEFAULTS: Record<WidgetType, () => Partial<WidgetNodeProps>> = {
+  Icon: () => ({
+    width:  { value: 0, unit: 'auto' },
+    height: { value: 0, unit: 'auto' },
+    backgroundColor: TRANSPARENT,
+    color: '#111827',
+    iconName: 'Star',
+    iconPackage: 'lucide',
+    iconSize: 24,
+    iconColor: '',
+    iconStrokeWidth: 2,
+  }),
   ListView: () => ({
     width:  { value: 100, unit: '%' },
     height: { value: 0, unit: 'auto' },

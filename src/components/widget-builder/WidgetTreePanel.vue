@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
   Rows3, Columns3, Square, Type, MousePointerClick,
-  FormInput, Pilcrow, List, ChevronDown, ChevronRight, Trash2, ArrowUp, ArrowDown,
+  FormInput, Pilcrow, List, Star, ChevronDown, ChevronRight, Trash2, ArrowUp, ArrowDown,
 } from 'lucide-vue-next'
 import { ref, computed } from 'vue'
 
@@ -24,6 +24,7 @@ const ICONS: Record<WidgetType, unknown> = {
   TextField: FormInput,
   RichText:  Pilcrow,
   ListView:  List,
+  Icon:      Star,
 }
 
 const PALETTE: { type: WidgetType; label: string }[] = [
@@ -35,6 +36,7 @@ const PALETTE: { type: WidgetType; label: string }[] = [
   { type: 'TextField', label: 'TextField' },
   { type: 'RichText',  label: 'RichText' },
   { type: 'ListView',  label: 'ListView' },
+  { type: 'Icon',      label: 'Icon' },
 ]
 
 function toggleCollapse(id: string) {

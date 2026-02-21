@@ -4,6 +4,7 @@ import type { WidgetNode, RichTextSpan } from '@/types/widget-builder'
 import { nodeToStyle } from '@/composables/useWidgetCss'
 import { loadGoogleFont } from '@/composables/useGoogleFonts'
 import { useWidgetBuilderStore } from '@/stores/widget-builder.store'
+import { resolveIcon } from '@/registry/icon-packages'
 
 const props = defineProps<{
   node: WidgetNode
@@ -13,6 +14,11 @@ const props = defineProps<{
 const store = useWidgetBuilderStore()
 const isSelected = computed(() => props.editorMode && store.selectedId === props.node.id)
 const nodeStyle = computed(() => nodeToStyle(props.node))
+const resolvedIcon = computed(() =>
+  props.node.type === 'Icon'
+    ? resolveIcon(props.node.props.iconPackage, props.node.props.iconName)
+    : null
+)
 
 function onClick(e: MouseEvent) {
   if (!props.editorMode) return
@@ -97,6 +103,26 @@ function spanStyle(span: RichTextSpan): Record<string, string> {
       :style="spanStyle(span)"
     >{{ span.text }}</span>
   </p>
+
+  <!-- Icon -->
+  <div
+    v-else-if="node.type === 'Icon'"
+    :style="nodeStyle"
+    :class="['inline-flex items-center justify-center', isSelected ? 'outline outline-2 outline-blue-500' : '']"
+    @click="onClick"
+  >
+    <component
+      v-if="resolvedIcon"
+      :is="resolvedIcon"
+      :size="node.props.iconSize ?? 24"
+      :color="node.props.iconColor || 'currentColor'"
+      :stroke-width="node.props.iconStrokeWidth ?? 2"
+    />
+    <span
+      v-else
+      class="text-xs text-muted-foreground font-mono border border-dashed border-gray-300 rounded px-1.5 py-0.5 select-none"
+    >icon</span>
+  </div>
 
   <!-- ListView — editor placeholder showing config summary -->
   <div

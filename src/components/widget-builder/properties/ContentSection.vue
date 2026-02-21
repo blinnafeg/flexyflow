@@ -5,6 +5,7 @@ import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import RichTextSection from './RichTextSection.vue'
+import IconSection from './IconSection.vue'
 
 const store = useWidgetBuilderStore()
 const node = computed(() => store.selectedNode!)
@@ -13,6 +14,9 @@ const node = computed(() => store.selectedNode!)
 <template>
   <div class="space-y-3">
     <p class="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Содержимое</p>
+
+    <!-- Icon -->
+    <IconSection v-if="node.type === 'Icon'" />
 
     <!-- Text content -->
     <div v-if="node.type === 'Text'" class="space-y-1">

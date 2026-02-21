@@ -1,17 +1,24 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import type { WidgetNode, RichTextSpan } from '@/types/widget-builder'
 import type { DataBinding, ListViewConfig, WidgetElementsV2 } from '@/types/list-view'
 import { nodeToStyle } from '@/composables/useWidgetCss'
 import { loadGoogleFont } from '@/composables/useGoogleFonts'
 import { supabase } from '@/lib/supabase'
 import { DataSourceService } from '@/services/DataSourceService'
+import { resolveIcon } from '@/registry/icon-packages'
 
 const props = defineProps<{
   node: WidgetNode
 }>()
 
 const nodeStyle = () => nodeToStyle(props.node)
+
+const resolvedIcon = computed(() =>
+  props.node.type === 'Icon'
+    ? resolveIcon(props.node.props.iconPackage, props.node.props.iconName)
+    : null
+)
 
 // ── ListView runtime ───────────────────────────────────────────────────────
 const listRows      = ref<Record<string, unknown>[]>([])
@@ -147,6 +154,21 @@ function spanStyle(span: RichTextSpan): Record<string, string> {
       :style="spanStyle(span)"
     >{{ span.text }}</span>
   </p>
+
+  <!-- Icon -->
+  <div
+    v-else-if="node.type === 'Icon'"
+    :style="nodeStyle()"
+    class="inline-flex items-center justify-center"
+  >
+    <component
+      v-if="resolvedIcon"
+      :is="resolvedIcon"
+      :size="node.props.iconSize ?? 24"
+      :color="node.props.iconColor || 'currentColor'"
+      :stroke-width="node.props.iconStrokeWidth ?? 2"
+    />
+  </div>
 
   <!-- ListView — runtime render -->
   <div v-else-if="node.type === 'ListView'" :style="{ width: nodeStyle().width }">

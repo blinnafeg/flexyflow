@@ -26,7 +26,7 @@ const hasTypography = computed(() =>
   node.value && ['Text', 'Button', 'TextField', 'RichText'].includes(node.value.type)
 )
 const hasContent = computed(() =>
-  node.value && ['Text', 'Button', 'TextField', 'RichText'].includes(node.value.type)
+  node.value && ['Text', 'Button', 'TextField', 'RichText', 'Icon'].includes(node.value.type)
 )
 // Show "Data" tab only for list-item widgets on bindable node types
 const showDataTab = computed(() =>

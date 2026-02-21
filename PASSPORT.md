@@ -61,12 +61,13 @@ src/
 │   ├── layout/
 │   │   └── GridBuilder.vue    # Визуальный редактор CSS-сетки
 │   ├── widget-builder/
-│   │   ├── CanvasNode.vue         # Рекурсивный рендерер ноды (ТОЛЬКО для editor mode) + ListView placeholder
+│   │   ├── CanvasNode.vue         # Рекурсивный рендерер ноды (ТОЛЬКО для editor mode) + ListView/Icon placeholder
 │   │   ├── WidgetCanvas.vue       # Canvas обёртка с click-to-deselect
 │   │   ├── WidgetTreePanel.vue    # Левая панель: палитра + дерево + секция «Данные» для list-item
 │   │   ├── PropertiesPanel.vue    # Правая панель: Layout|Style|Content|Data; для ListView — конфиг
 │   │   ├── ListViewConfigPanel.vue # Конфигурация ListView ноды: источник, фильтры, сортировка, пагинация
 │   │   ├── DataBindingPanel.vue   # Привязка полей данных к элементам виджета (для list-item режима)
+│   │   ├── IconPicker.vue         # Sheet-браузер иконок: поиск, список пакетов, grid иконок
 │   │   └── properties/
 │   │       ├── SizeSection.vue
 │   │       ├── SpacingSection.vue
@@ -74,7 +75,8 @@ src/
 │   │       ├── ColorsSection.vue
 │   │       ├── TypographySection.vue
 │   │       ├── FlexSection.vue
-│   │       └── ContentSection.vue
+│   │       ├── ContentSection.vue
+│   │       └── IconSection.vue    # Свойства Icon: пикер, размер, толщина, цвет
 │   ├── widgets/
 │   │   ├── PreviewNode.vue        # Рекурсивный рендерер для публичного просмотра (runtime, без editor режима)
 │   │   │                          # Для ListView: загружает данные из Supabase, применяет dataBindings, рендерит строки
@@ -94,7 +96,8 @@ src/
 │   ├── supabase.ts            # Supabase client (singleton)
 │   └── utils.ts               # cn() = clsx + tailwind-merge
 ├── registry/
-│   └── actions.registry.ts    # BUILT_IN_ACTIONS[] — метаданные всех типов действий
+│   ├── actions.registry.ts    # BUILT_IN_ACTIONS[] — метаданные всех типов действий
+│   └── icon-packages.ts       # Реестр пакетов иконок: Lucide (~1400 иконок), расширяемый
 ├── router/
 │   └── index.ts               # Vue Router маршруты
 ├── services/
@@ -385,7 +388,7 @@ toast.error(e.message)
 
 ### Готово и работает ✅ (widget builder)
 - Конструктор виджетов (FlutterFlow-style): 3 колонки — Дерево | Холст | Свойства
-- Поддерживаемые виджеты: Column, Row, Container, Text, Button, TextField, RichText, **ListView**
+- Поддерживаемые виджеты: Column, Row, Container, Text, Button, TextField, RichText, **ListView**, **Icon**
 - Свойства: размеры (px/%/auto), отступы (padding/margin per side), цвета, бордеры (per corner radius), типографика, flex layout
 - Дерево: добавление, удаление, переименование, перемещение ↑↓, collapse
 - Холст: чистый live-preview без лишних меток, outline-выделение выбранного
@@ -395,6 +398,9 @@ toast.error(e.message)
 - **List Item mode** — пометить виджет как шаблон списка, задать источник, привязать поля к узлам
 - **ListView рантайм** — `PreviewNode.vue` + `WidgetRenderer.vue`: реальный рендер строк из Supabase на странице
 - **PagePreviewView** — обновлён: использует `WidgetRenderer`, поддерживает v1/v2 формат
+- **Icon виджет** — выбор иконки через Sheet-браузер (поиск + пакеты + grid), настройки: размер, толщина линий, цвет; рендер в editor (CanvasNode) и preview (PreviewNode)
+- **Реестр пакетов иконок** (`src/registry/icon-packages.ts`) — Lucide Icons (~1400), расширяемый (добавить пакет = 3 строки)
+- **IconPicker** (`IconPicker.vue`) — Sheet-панель: поиск слева, список пакетов, grid иконок; кнопка «+ Добавить пакет» с подсказкой
 
 ### Не реализовано / следующие задачи ❌
 - **Назначение виджетов в слоты** страницы (ff_pages.content) — прямое назначение в slot ещё нет
@@ -496,6 +502,19 @@ Service_role JWT генерируется из JWT_SECRET через HMAC-SHA256
 - Правая панель: для ListView-ноды показывает `ListViewConfigPanel` вместо стандартных табов
 - build: ✅ 0 ошибок TypeScript (2446 модулей)
 
+### 2026-02-21 — Icon виджет (AI: Claude Sonnet 4.6)
+- **Новый тип виджета `Icon`** в `WidgetType` + проп `iconName`, `iconPackage`, `iconSize`, `iconColor`, `iconStrokeWidth` в `WidgetNodeProps`
+- **`src/registry/icon-packages.ts`** — реестр пакетов иконок; Lucide Icons (~1400 иконок, PascalCase-фильтрация, исключение базового `Icon` компонента)
+- **`IconPicker.vue`** — Sheet-браузер иконок: поиск слева, список пакетов (кол-во иконок), grid с `auto-fill minmax(56px)`, выделение текущей, кнопка «+ Добавить пакет» с hint
+- **`IconSection.vue`** — панель свойств иконки: превью + открытие пикера, размер (px), толщина линий, цвет (color input + сброс на currentColor)
+- **`CanvasNode.vue`** — добавлен блок рендера Icon с `resolveIcon()` computed
+- **`PreviewNode.vue`** — добавлен блок рендера Icon
+- **`WidgetTreePanel.vue`** — Icon (Star иконка) в палитре
+- **`PropertiesPanel.vue`** — `hasContent` включает `'Icon'`
+- **`ContentSection.vue`** — `<IconSection>` для `node.type === 'Icon'`
+- Баг-фикс: `lucide-vue-next` экспортирует базовый `Icon` (не иконка) — добавлен `LUCIDE_NON_ICONS` exclusion set
+- build: ✅ 0 ошибок TypeScript (2460 модулей)
+
 ### 2026-02-21 — ListView рантайм / PagePreview (AI: Claude Sonnet 4.6)
 - **`PreviewNode.vue`** (`src/components/widgets/`) — рекурсивный рендерер для публичного просмотра:
   - Column/Row/Container/Text/Button/TextField/RichText — рендер без editor-режима
@@ -534,7 +553,7 @@ Service_role JWT генерируется из JWT_SECRET через HMAC-SHA256
 8. **Пиши на русском** в UI (labels, placeholders, уведомления)
 9. **Избегай `any`** — TypeScript strict mode включён
 10. **При добавлении нового типа действия** — следуй 4-шаговому процессу выше
-11. **При добавлении нового типа виджета** — следуй 5-шаговому процессу в правиле 10
+11. **При добавлении нового типа виджета** — следуй 5-шаговому процессу в правиле 10 (+ `PreviewNode.vue` для рантайм рендера)
 12. **Для dark mode** — `@custom-variant dark` + `@theme inline` ОБЯЗАТЕЛЬНЫ в `index.css`
 13. **Для создания файлов** — использовать `Write` tool, не Bash heredoc
 14. **Editor vs Preview рендер** — два разных компонента:
