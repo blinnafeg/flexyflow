@@ -64,7 +64,9 @@ src/
 │   │   ├── CanvasNode.vue         # Рекурсивный рендерер ноды (ТОЛЬКО для editor mode) + ListView/Icon placeholder
 │   │   ├── WidgetCanvas.vue       # Canvas обёртка с click-to-deselect
 │   │   ├── WidgetTreePanel.vue    # Левая панель: палитра + дерево + секция «Данные» для list-item
-│   │   ├── PropertiesPanel.vue    # Правая панель: Layout|Style|Content|Data; для ListView — конфиг
+│   │   ├── PropertiesPanel.vue    # Правая панель: Layout|Style|Content|Data|Actions; для ListView — конфиг
+│   │   ├── NodeActionsPanel.vue   # Вкладка «Actions» в PropertiesPanel: триггеры + шаги действий inline на ноде
+│   │   ├── ElementPicker.vue      # Пикер элементов: текущий виджет + другие виджеты проекта; Teleport + fixed pos
 │   │   ├── ListViewConfigPanel.vue # Конфигурация ListView ноды: источник, фильтры, сортировка, пагинация
 │   │   ├── DataBindingPanel.vue   # Привязка полей данных к элементам виджета (для list-item режима)
 │   │   ├── IconPicker.vue         # Sheet-браузер иконок: поиск, список пакетов, grid иконок
@@ -85,7 +87,8 @@ src/
 ├── composables/
 │   ├── useTheme.ts            # Тема (dark/light): singleton ref + localStorage + watchEffect
 │   ├── useWidgetCss.ts        # nodeToStyle() — CSS из WidgetNodeProps для :style биндинга
-│   └── useWidgetTree.ts       # Tree операции: createDefaultNode, findNode, removeNode, ...
+│   ├── useWidgetTree.ts       # Tree операции: createDefaultNode, findNode, removeNode, ...
+│   └── useActionExecutor.ts   # execute(step) / executeAll(steps) — runtime выполнение ActionStep[]
 ├── services/
 │   ├── ActionService.ts
 │   ├── DataSourceService.ts   # Supabase: интроспекция колонок, fetchData с фильтрами/сортировкой
@@ -357,7 +360,29 @@ toast.error(e.message)
 - Flat Map index пересчитывается через `watchEffect` при любом изменении дерева
 - `updateProps(id, patch)` делает deep merge — поля вложенных объектов (border, flex, padding) нужно передавать целиком или частично через spread
 
-### 11. Шаблоны Vue
+### 11. Inline Action System (actions на нодах виджета)
+
+Действия хранятся прямо в `WidgetNode.actions?: NodeActions` — не в отдельной таблице.
+Ключ видимости для целого виджета: `w:<widgetId>`. Для отдельной ноды: просто `nodeId`.
+
+**Цепочка provide/inject** (от `NodeActionsPanel` → `ActionStep` → `ElementPicker`):
+```ts
+// NodeActionsPanel.vue (provide)
+provide('widgetNodes',     computed(() => [...store.index.values()].map(...)))
+provide('projectId',       computed(() => store.widget?.projectId ?? ''))
+provide('currentWidgetId', computed(() => store.widget?.id ?? ''))
+
+// ActionStep.vue / ElementPicker.vue (inject)
+const projectIdRef = inject<ComputedRef<string> | Ref<string>>('projectId', ref(''))
+```
+
+**ElementPicker** — всегда использовать `<Teleport to="body">` для dropdown внутри `overflow:hidden` контейнеров.
+Позицию вычислять через `getBoundingClientRect()` ДО установки `open = true`, чтобы избежать мигания.
+
+**Flexbox truncate**: для обрезания текста в flex-контейнере обязательно `flex-1 min-w-0` на item + `truncate` на тексте.
+`truncate` без `min-w-0` НЕ работает — flex-item не ограничивает свою ширину по умолчанию.
+
+### 12. Шаблоны Vue
 - Всегда `v-if` перед работой с данными, которые могут быть `null`
 - Не использовать `!` non-null assertion в шаблонах — использовать `?.` или `v-if` guard
 - Проп `size="icon-sm"` есть у Button — работает (добавлен в `buttonVariants`)
@@ -390,7 +415,7 @@ toast.error(e.message)
 - Конструктор виджетов (FlutterFlow-style): 3 колонки — Дерево | Холст | Свойства
 - Поддерживаемые виджеты: Column, Row, Container, Text, Button, TextField, RichText, **ListView**, **Icon**
 - Свойства: размеры (px/%/auto), отступы (padding/margin per side), цвета, бордеры (per corner radius), типографика, flex layout
-- Дерево: добавление, удаление, переименование, перемещение ↑↓, collapse
+- Дерево: добавление, удаление, переименование, перемещение ↑↓, collapse, **drag & drop**, **контекстное меню**, **поиск**, **lock/unlock**, **show/hide нод**
 - Холст: чистый live-preview без лишних меток, outline-выделение выбранного
 - Сохранение в Supabase `ff_widgets.elements` (v2-формат с метаданными)
 - Ctrl+S для быстрого сохранения
@@ -401,6 +426,11 @@ toast.error(e.message)
 - **Icon виджет** — выбор иконки через Sheet-браузер (поиск + пакеты + grid), настройки: размер, толщина линий, цвет; рендер в editor (CanvasNode) и preview (PreviewNode)
 - **Реестр пакетов иконок** (`src/registry/icon-packages.ts`) — Lucide Icons (~1400), расширяемый (добавить пакет = 3 строки)
 - **IconPicker** (`IconPicker.vue`) — Sheet-панель: поиск слева, список пакетов, grid иконок; кнопка «+ Добавить пакет» с подсказкой
+- **Action System inline** — `NodeActionsPanel.vue`: триггеры (onClick/onHover/onChange/onSubmit/onInit) + шаги действий сохраняются прямо в `WidgetNode.actions`
+- **useActionExecutor** — composable выполняет `ActionStep[]` в рантайме: visibility show/hide/toggle, navigate, back, custom code
+- **Видимость в рантайме** — `PreviewNode.vue` использует `visibilityStore.isVisible(node.id)` вместо статического `node.hidden`; onInit действия выполняются при монтировании
+- **Межвиджетная видимость** — кнопка в Widget A может скрывать элемент в Widget B или весь Widget B (`w:WIDGET_ID`); `WidgetRenderer.vue` проверяет видимость всего виджета
+- **ElementPicker** — выпадающий пикер с `<Teleport to="body">`: текущий виджет + список других виджетов проекта (lazy-загрузка нод); позиционируется через `getBoundingClientRect()`; тематический скроллбар через CSS-переменные shadcn
 
 ### Не реализовано / следующие задачи ❌
 - **Назначение виджетов в слоты** страницы (ff_pages.content) — прямое назначение в slot ещё нет
@@ -526,6 +556,14 @@ Service_role JWT генерируется из JWT_SECRET через HMAC-SHA256
 - **`PagePreviewView.vue`** — переписан: хранит `slotName → widgetId`, рендерит `<WidgetRenderer>` в каждый слот; вся логика парсинга формата делегирована `WidgetRenderer`
 - build: ✅ 0 ошибок TypeScript
 
+### 2026-02-21 — Улучшения дерева виджетов (AI: Claude Sonnet 4.6)
+- **Drag & drop** нод в дереве (`WidgetTreePanel.vue`): перетаскивание с визуальной индикацией drop-зоны
+- **Контекстное меню** (правая кнопка / иконка ⋯): дублировать, переименовать, удалить, скрыть/показать, заблокировать/разблокировать
+- **Поиск по дереву** — фильтрация нод по имени в реальном времени
+- **Lock / Unlock** нод — заблокированная нода не выбирается кликом на холсте, иконка замка в дереве
+- **Visibility toggle** — скрытие/отображение нод из дерева (иконка глаза), синхронизировано с `node.hidden`
+- build: ✅ 0 ошибок TypeScript
+
 ### 2026-02-21 — Тема, линейка, воркфлоу (AI: Claude Sonnet 4.6)
 - **Исправлен** баг прозрачных dropdown/popover/card — добавлен `@theme inline` в `index.css`
 - **Добавлена тёмная тема:** composable `useTheme.ts` (singleton + localStorage), Moon/Sun в AppSidebar
@@ -537,6 +575,20 @@ Service_role JWT генерируется из JWT_SECRET через HMAC-SHA256
 - **Маршрут** `/projects/:id/workflows` добавлен в router
 - **ProjectDetailView** — добавлена карточка "Воркфлоу" (Zap icon, синяя)
 - **PageEditorView** — секция "Действия" в панели слота: список воркфлоу виджета + создание
+- build: ✅ 0 ошибок TypeScript
+
+### 2026-02-21 — Action System inline + межвиджетная видимость (AI: Claude Sonnet 4.6)
+- **`NodeActions` тип** — добавлен в `src/types/widget-builder.ts`: `Partial<Record<TriggerType, ActionStep[]>>`
+- **`WidgetNode.actions?`** — поле для хранения действий прямо на ноде (без отдельной таблицы БД)
+- **`widget-builder.store.ts`** — добавлены `updateNodeActions(id, actions)` и экспорт `index` Map для ElementPicker
+- **`useActionExecutor.ts`** — новый composable: `execute(step)` / `executeAll(steps)`, поддерживает visibility, navigation, custom code
+- **`NodeActionsPanel.vue`** — новая вкладка «Actions» в PropertiesPanel; триггеры зависят от типа ноды (Button: onClick/onHover/onInit, TextField: onChange/onSubmit/onInit, и т.д.); provide `widgetNodes`, `projectId`, `currentWidgetId`
+- **`PropertiesPanel.vue`** — добавлена вкладка «Actions», видна для всех типов нод
+- **`ActionStep.vue`** — инжектирует `projectId`/`currentWidgetId`; для полей `elementId`/`modalId` рендерит `ElementPicker` вместо обычного Input
+- **`PreviewNode.vue`** — runtime видимость через `visibilityStore.isVisible(node.id, !node.hidden)`; `handleClick/Hover/Change/Submit/onInit` выполняют соответствующие actions; `onInit` вызывается в `onMounted`
+- **`WidgetRenderer.vue`** — проверяет видимость всего виджета: `visibilityStore.isVisible('w:' + widgetId, true)`
+- **`ElementPicker.vue`** — новый cross-widget пикер; `<Teleport to="body">` обходит `overflow:hidden`; позиция вычисляется через `getBoundingClientRect()` до открытия; lazy-загрузка нод других виджетов из Supabase; `flex-1 min-w-0` предотвращает горизонтальный скролл от длинных имён; тематический скроллбар через `hsl(var(--border))`
+- **Ключевое правило**: `w:WIDGET_ID` — префикс для видимости целого виджета; обычный `nodeId` — для отдельной ноды
 - build: ✅ 0 ошибок TypeScript
 
 ---
@@ -575,93 +627,8 @@ Service_role JWT генерируется из JWT_SECRET через HMAC-SHA256
 - Созданы рекомендации по безопасности репозитория (`SECURITY_RECOMMENDATIONS.md`)
 - Проведен анализ безопасности репозитория
 
-### 2026-02-21 — Создание контекстного файла PROJECT_CONTEXT.md
-- Создан файл `PROJECT_CONTEXT.md` с ключевой информацией о проекте для ИИ
-- Файл содержит основные архитектурные принципы, ключевые компоненты и примеры кода
-- Добавлены рекомендации по использованию файла для ускорения понимания проекта ИИ
-</content>
-</file>
-</files>
-
----
-
-## История изменений репозитория
-
-### 2026-02-21 — Инициализация Git репозитория и подключение к GitHub
-- Создан файл `.gitignore` с настройками для игнорирования конфиденциальных данных и временных файлов
-- Инициализирован Git репозиторий и добавлены все файлы проекта
-- Создан первый коммит с сообщением "Initial commit: FlexyFlow project"
-- Подключен удаленный репозиторий на GitHub
-- Загружены все файлы проекта в удаленный репозиторий
-- Созданы инструкции по работе с Git и GitHub (`GITHUB_INSTRUCTIONS.md`)
-- Созданы рекомендации по безопасности репозитория (`SECURITY_RECOMMENDATIONS.md`)
-- Проведен анализ безопасности репозитория
-
----
-
-## Инструкции по работе с репозиторием
-
-### Регулярное резервное копирование
-
-Для регулярного резервного копирования проекта используйте следующие команды:
-
-```bash
-# Добавление изменений в репозиторий
-git add .
-
-# Создание коммита с осмысленным сообщением
-git commit -m "Описание внесенных изменений"
-
-# Отправка изменений в удаленный репозиторий
-git push origin main
-```
-
-### Создание резервной копии локально
-
-Для создания локальной резервной копии проекта выполните:
-
-```bash
-# Создание архива репозитория
-git archive --format=zip --output=flexyflow-backup.zip main
-```
-
-### Дополнительные рекомендации
-
-1. Используйте теги для обозначения важных версий:
-   ```bash
-   git tag -a v1.0.0 -m "Версия 1.0.0"
-   git push origin v1.0.0
-   ```
-
-2. Создайте ветки для разработки новых функций:
-   ```bash
-   git checkout -b feature/new-feature
-   # После завершения разработки
-   git checkout main
-   git merge feature/new-feature
-   git push origin main
-   ```
-
-3. Регулярно синхронизируйте локальный репозиторий с удаленным:
-   ```bash
-   git pull origin main
-   ```
-
-Следуя этим инструкциям, вы сможете успешно поддерживать репозиторий проекта FlexyFlow в актуальном состоянии и обеспечить регулярное резервное копирование.
-
----
-
-## Информация для ИИ
-
-Для ускорения понимания проекта ИИ был создан специальный файл `PROJECT_CONTEXT.md`, содержащий ключевую информацию о проекте в компактном виде. Этот файл включает:
-
-1. Основные архитектурные принципы проекта
-2. Ключевые компоненты и их взаимодействие
-3. Примеры кода наиболее важных частей проекта
-4. Паттерны проектирования, используемые в проекте
-5. Рекомендации по разработке
-
-При работе с проектом ИИ может использовать этот файл для быстрого понимания основных концепций без необходимости перечитывать все файлы проекта. Если же необходима более подробная информация, ИИ может обратиться к оригинальным файлам проекта.
+### 2026-02-21 — Удалён PROJECT_CONTEXT.md (избыточный файл)
+- Файл удалён как дублирующий PASSPORT.md; PASSPORT.md остаётся единственным источником истины
 </content>
 </file>
 </files>

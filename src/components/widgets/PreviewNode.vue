@@ -4,6 +4,8 @@ import type { WidgetNode, RichTextSpan } from '@/types/widget-builder'
 import type { DataBinding, ListViewConfig, WidgetElementsV2 } from '@/types/list-view'
 import { nodeToStyle } from '@/composables/useWidgetCss'
 import { loadGoogleFont } from '@/composables/useGoogleFonts'
+import { useActionExecutor } from '@/composables/useActionExecutor'
+import { useVisibilityStore } from '@/stores/visibility.store'
 import { supabase } from '@/lib/supabase'
 import { DataSourceService } from '@/services/DataSourceService'
 import { resolveIcon } from '@/registry/icon-packages'
@@ -13,6 +15,13 @@ const props = defineProps<{
 }>()
 
 const nodeStyle = () => nodeToStyle(props.node)
+const visibilityStore = useVisibilityStore()
+const { executeAll } = useActionExecutor()
+
+// Runtime visibility: visibilityStore overrides design-time hidden flag
+const runtimeVisible = computed(() =>
+  visibilityStore.isVisible(props.node.id, !props.node.hidden)
+)
 
 const resolvedIcon = computed(() =>
   props.node.type === 'Icon'
@@ -20,12 +29,29 @@ const resolvedIcon = computed(() =>
     : null
 )
 
+// ── Action handlers ─────────────────────────────────────────────────────────
+function handleClick() {
+  executeAll(props.node.actions?.onClick)
+}
+
+function handleHover() {
+  executeAll(props.node.actions?.onHover)
+}
+
+function handleChange() {
+  executeAll(props.node.actions?.onChange)
+}
+
+function handleSubmit() {
+  executeAll(props.node.actions?.onSubmit)
+}
+
 // ── ListView runtime ───────────────────────────────────────────────────────
-const listRows      = ref<Record<string, unknown>[]>([])
-const listItemRoot  = ref<WidgetNode | null>(null)
+const listRows         = ref<Record<string, unknown>[]>([])
+const listItemRoot     = ref<WidgetNode | null>(null)
 const listItemBindings = ref<DataBinding[]>([])
-const listLoading   = ref(false)
-const listError     = ref<string | null>(null)
+const listLoading      = ref(false)
+const listError        = ref<string | null>(null)
 
 const dataService = new DataSourceService()
 
@@ -52,6 +78,9 @@ function applyBindings(
 }
 
 onMounted(async () => {
+  // Execute onInit actions for this node
+  executeAll(props.node.actions?.onInit)
+
   if (props.node.type !== 'ListView') return
 
   const cfg = props.node.props.listViewConfig as ListViewConfig | undefined
@@ -111,13 +140,15 @@ function spanStyle(span: RichTextSpan): Record<string, string> {
 </script>
 
 <template>
-  <!-- Hidden nodes are skipped in preview/publish -->
-  <template v-if="node.hidden" />
+  <!-- Hidden nodes (design-time or runtime-overridden) are skipped -->
+  <template v-if="!runtimeVisible" />
 
   <!-- Column / Row / Container -->
   <div
     v-else-if="node.type === 'Column' || node.type === 'Row' || node.type === 'Container'"
     :style="nodeStyle()"
+    :class="node.actions?.onClick?.length ? 'cursor-pointer' : ''"
+    @click="node.actions?.onClick?.length ? handleClick() : undefined"
   >
     <PreviewNode
       v-for="child in node.children"
@@ -130,12 +161,16 @@ function spanStyle(span: RichTextSpan): Record<string, string> {
   <span
     v-else-if="node.type === 'Text'"
     :style="nodeStyle()"
+    :class="node.actions?.onClick?.length ? 'cursor-pointer' : ''"
+    @click="node.actions?.onClick?.length ? handleClick() : undefined"
   >{{ node.props.text || '' }}</span>
 
   <!-- Button -->
   <button
     v-else-if="node.type === 'Button'"
     :style="{ ...nodeStyle(), cursor: 'pointer', border: 'none' }"
+    @click="handleClick"
+    @mouseover="node.actions?.onHover?.length ? handleHover() : undefined"
   >{{ node.props.text || 'Button' }}</button>
 
   <!-- TextField -->
@@ -143,13 +178,16 @@ function spanStyle(span: RichTextSpan): Record<string, string> {
     v-else-if="node.type === 'TextField'"
     :placeholder="node.props.placeholder || ''"
     :style="{ ...nodeStyle(), outline: 'none' }"
-    readonly
+    @change="handleChange"
+    @keydown.enter="handleSubmit"
   />
 
   <!-- RichText -->
   <p
     v-else-if="node.type === 'RichText'"
     :style="nodeStyle()"
+    :class="node.actions?.onClick?.length ? 'cursor-pointer' : ''"
+    @click="node.actions?.onClick?.length ? handleClick() : undefined"
   >
     <span
       v-for="span in (node.props.richSpans ?? [])"
@@ -162,7 +200,8 @@ function spanStyle(span: RichTextSpan): Record<string, string> {
   <div
     v-else-if="node.type === 'Icon'"
     :style="nodeStyle()"
-    class="inline-flex items-center justify-center"
+    :class="['inline-flex items-center justify-center', node.actions?.onClick?.length ? 'cursor-pointer' : '']"
+    @click="node.actions?.onClick?.length ? handleClick() : undefined"
   >
     <component
       v-if="resolvedIcon"

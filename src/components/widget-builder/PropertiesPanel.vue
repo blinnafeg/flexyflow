@@ -14,6 +14,7 @@ import FlexSection        from './properties/FlexSection.vue'
 import ContentSection     from './properties/ContentSection.vue'
 import ListViewConfigPanel from './ListViewConfigPanel.vue'
 import DataBindingPanel   from './DataBindingPanel.vue'
+import NodeActionsPanel   from './NodeActionsPanel.vue'
 
 const store = useWidgetBuilderStore()
 const node = computed(() => store.selectedNode)
@@ -74,6 +75,7 @@ const showDataTab = computed(() =>
           <TabsTrigger value="style" class="text-xs">Style</TabsTrigger>
           <TabsTrigger v-if="hasContent" value="content" class="text-xs">Content</TabsTrigger>
           <TabsTrigger v-if="showDataTab" value="data" class="text-xs text-blue-500">Data</TabsTrigger>
+          <TabsTrigger value="actions" class="text-xs">Actions</TabsTrigger>
         </TabsList>
 
         <!-- Layout tab -->
@@ -112,6 +114,11 @@ const showDataTab = computed(() =>
         <!-- Data binding tab (list-item widgets only) -->
         <TabsContent v-if="showDataTab" value="data" class="flex-1 overflow-y-auto mt-0">
           <DataBindingPanel />
+        </TabsContent>
+
+        <!-- Actions tab -->
+        <TabsContent value="actions" class="flex-1 overflow-y-auto mt-0">
+          <NodeActionsPanel />
         </TabsContent>
       </Tabs>
     </template>

@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed, watchEffect } from 'vue'
 import { nanoid } from 'nanoid'
-import type { WidgetNode, WidgetType, WidgetNodeProps, WidgetDefinition } from '@/types/widget-builder'
+import type { WidgetNode, WidgetType, WidgetNodeProps, WidgetDefinition, NodeActions } from '@/types/widget-builder'
 
 // Deep-clone a node tree with fresh IDs
 function deepCloneNode(node: WidgetNode): WidgetNode {
@@ -331,6 +331,13 @@ export const useWidgetBuilderStore = defineStore('widgetBuilder', () => {
     isDirty.value = true
   }
 
+  function updateNodeActions(id: string, actions: NodeActions) {
+    const node = index.value.get(id)
+    if (!node) return
+    node.actions = actions
+    isDirty.value = true
+  }
+
   function $reset() {
     widget.value = null
     selectedId.value = null
@@ -349,5 +356,7 @@ export const useWidgetBuilderStore = defineStore('widgetBuilder', () => {
     addChild, addSibling, deleteNode, moveUp, moveDown, wrapInColumn,
     wrapIn, duplicateNode, moveNode,
     toggleNodeVisibility, toggleNodeLock,
+    updateNodeActions,
+    index,
   }
 })

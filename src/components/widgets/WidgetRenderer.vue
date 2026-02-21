@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import type { WidgetNode } from '@/types/widget-builder'
 import type { WidgetElementsV2 } from '@/types/list-view'
 import { supabase } from '@/lib/supabase'
+import { useVisibilityStore } from '@/stores/visibility.store'
 import PreviewNode from './PreviewNode.vue'
 
 const props = defineProps<{
@@ -12,6 +13,12 @@ const props = defineProps<{
 const root    = ref<WidgetNode | null>(null)
 const loading = ref(true)
 const error   = ref<string | null>(null)
+
+const visibilityStore = useVisibilityStore()
+// Whole-widget visibility: key is 'w:<widgetId>'
+const isWidgetVisible = computed(() =>
+  visibilityStore.isVisible('w:' + props.widgetId, true)
+)
 
 onMounted(async () => {
   try {
@@ -42,8 +49,11 @@ onMounted(async () => {
 </script>
 
 <template>
+  <!-- Whole-widget visibility (toggled via 'w:<widgetId>' in visibilityStore) -->
+  <template v-if="!isWidgetVisible" />
+
   <div
-    v-if="loading"
+    v-else-if="loading"
     class="flex items-center justify-center py-4 text-xs text-gray-400 animate-pulse"
   >
     Загрузка...
