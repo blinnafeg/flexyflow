@@ -93,7 +93,8 @@ src/
 │   ├── useTheme.ts            # Тема (dark/light): singleton ref + localStorage + watchEffect
 │   ├── useWidgetCss.ts        # nodeToStyle() — CSS из WidgetNodeProps для :style биндинга
 │   ├── useWidgetTree.ts       # Tree операции: createDefaultNode, findNode, removeNode, ...
-│   └── useActionExecutor.ts   # execute(step) / executeAll(steps) — runtime выполнение ActionStep[]
+│   ├── useActionExecutor.ts   # execute(step) / executeAll(steps) — runtime выполнение ActionStep[]
+│   └── useBreakpointMatch.ts  # Реактивный BreakpointId по window.innerWidth + resize listener
 ├── services/
 │   ├── ActionService.ts
 │   ├── DataSourceService.ts   # Supabase: интроспекция колонок, fetchData с фильтрами/сортировкой
@@ -114,6 +115,7 @@ src/
 │   ├── VisibilityService.ts   # Глобальный show/hide/toggle (Vue reactive)
 │   └── WorkflowService.ts     # Supabase CRUD + executeWorkflow()
 ├── stores/
+│   ├── breakpoints.store.ts   # Брейкпоинты проекта: load/save в ff_projects.breakpoints; activeId; getIdForWidth(w)
 │   ├── builder.store.ts       # Текущий воркфлоу, выбранный слот/виджет, preview mode
 │   ├── palette.store.ts       # Палитра цветов проекта: load/save из ff_projects.color_palette (JSONB)
 │   ├── projects.store.ts      # CRUD: проекты, страницы, макеты
@@ -122,13 +124,14 @@ src/
 │   └── workflows.store.ts     # CRUD воркфлоу + кэш
 ├── types/
 │   ├── actions.ts             # TriggerType, ActionType, ActionStep, Workflow, ...
+│   ├── breakpoints.ts         # BreakpointId, Breakpoint, DEFAULT_BREAKPOINTS (mobile/tablet/tabletLandscape/desktop)
 │   ├── layouts.ts             # GridSlot, LayoutConfig, Layout
 │   ├── palette.ts             # PaletteColor, ColorGroup, DEFAULT_PALETTE, COLOR_GROUP_LABELS
-│   ├── projects.ts            # Project, Page (+ palette, slotSettings)
+│   ├── projects.ts            # Project, Page (+ responsiveLayouts, slotSettings)
 │   ├── list-view.ts           # ListViewConfig, ListItemMeta, DataBinding, WidgetKind, ColumnInfo, ...
-│   ├── widget-builder.ts      # WidgetNode, WidgetType (+ ListView), WidgetNodeProps (+ widgetRefIds, slotOrientation), ...
+│   ├── widget-builder.ts      # WidgetNode, WidgetType (+ ListView), WidgetNodeProps (+ breakpointVisibility), ...
 │   ├── widgets.ts             # WidgetElement, Widget, WidgetAssignment
-│   └── index.ts               # re-exports всех типов (включая palette)
+│   └── index.ts               # re-exports всех типов (включая palette, breakpoints)
 ├── views/
 │   ├── dashboard/DashboardView.vue
 │   ├── projects/
@@ -140,8 +143,8 @@ src/
 │   │   └── LayoutEditorView.vue   # Редактор сетки (использует GridBuilder)
 │   ├── pages/
 │   │   ├── PagesView.vue          # Список страниц проекта
-│   │   ├── PageEditorView.vue     # Редактор страницы + панель настроек + секция воркфлоу слота
-│   │   └── PagePreviewView.vue    # Превью страницы
+│   │   ├── PageEditorView.vue     # Редактор страницы + брейкпоинт-свитчер + назначение макета на брейкпоинт
+│   │   └── PagePreviewView.vue    # Превью страницы + плавающий переключатель брейкпоинтов (Auto/Mobile/...)
 │   ├── workflows/
 │   │   ├── WorkflowsView.vue      # Список воркфлоу проекта + создание + удаление
 │   │   └── WorkflowEditorView.vue # Редактор воркфлоу (использует ActionBuilder)
@@ -162,7 +165,7 @@ src/
 |---|---|---|
 | `ff_projects` | Проекты | id, name, description, supabase_url, supabase_anon_key, color_palette (jsonb) |
 | `ff_layouts` | Макеты страниц | id, project_id, name, config (jsonb), slots (jsonb) |
-| `ff_pages` | Страницы | id, project_id, name, slug, layout_id, content (jsonb), is_published |
+| `ff_pages` | Страницы | id, project_id, name, slug, layout_id, responsive_layouts (jsonb), content (jsonb), is_published |
 | `ff_widgets` | Виджеты | id, project_id, name, elements (jsonb) |
 | `ff_workflows` | Воркфлоу | id, project_id, name, trigger, steps (jsonb), widget_id, page_id |
 | `ff_custom_actions` | Кастомные действия | id, project_id, name, code, inputs, outputs |
@@ -186,6 +189,13 @@ src/
 ```json
 [{ "id": "abc123", "name": "header", "label": "Шапка", "row": 1, "col": 1, "rowSpan": 1, "colSpan": 3 }]
 ```
+
+**`ff_pages.responsive_layouts`:**
+```json
+{ "mobile": "layout-uuid", "tablet": "layout-uuid", "desktop": "layout-uuid" }
+```
+Цепочка фолбека: mobile → tablet → tabletLandscape → desktop → layout_id.
+> **SQL-миграция обязательна:** `ALTER TABLE ff_pages ADD COLUMN IF NOT EXISTS responsive_layouts jsonb NOT NULL DEFAULT '{}';`
 
 **`ff_pages.content`:**
 ```json
@@ -460,6 +470,12 @@ const projectIdRef = inject<ComputedRef<string> | Ref<string>>('projectId', ref(
 - **Ориентация слота** (row/column) — inline кнопки ↔/↕ для flex-направления; сохраняется в `_settings[slot].orientation`
 - **Фон слота** — `ColorPickerInput` для выбора/сброса цвета фона; сохраняется в `_settings[slot].backgroundColor`
 - **PagePreviewView** обновлён: рендерит все виджеты слота через `<WidgetRenderer>` с flex-контейнером нужного направления + фоновым цветом
+- **Адаптивные макеты страниц** — каждая страница может иметь разный макет на разных брейкпоинтах; цепочка фолбека: mobile → tablet → tabletLandscape → desktop; переключатель в PageEditorView
+- **Переключатель брейкпоинтов в превью** — плавающая панель Auto/Mobile/Tablet/Desktop в PagePreviewView; позволяет видеть мобильный макет без изменения размера браузера
+- **Видимость нод по брейкпоинту** — `breakpointVisibility` на каждом WidgetNode; ResponsiveSection в PropertiesPanel с 4 кнопками; применяется в PreviewNode
+- **Мультиселект в widget builder** — Shift+Click выбирает несколько нод; PropertiesPanel показывает баннер мультиселекта
+- **`breakpoints.store.ts`** — хранит брейкпоинты проекта (DEFAULT_BREAKPOINTS или кастомные из `ff_projects.breakpoints`), `activeId` для редактора, `getIdForWidth(w)` для рантайма
+- **`useBreakpointMatch`** — composable: реактивный `currentId` по `window.innerWidth` + resize listener; используется в PagePreviewView и PreviewNode
 - **Палитра цветов проекта** (`src/stores/palette.store.ts`) — FlutterFlow-style: 4 группы (Brand, Accent, Semantic, Neutral), light/dark варианты; загрузка/сохранение в `ff_projects.color_palette` (JSONB)
 - **`DEFAULT_PALETTE`** — 13 предустановленных цветов из `src/types/palette.ts` (с осмысленными light/dark вариантами)
 - **`ColorPickerInput.vue`** (`src/components/color-picker/`) — унифицированный пикер: цветной swatch (нативный `<input type="color">`), hex-инпут, кнопка очистки, разворачиваемая палитра проекта с группировкой и light/dark переключателем; без Popover (inline expand)
@@ -639,6 +655,22 @@ Service_role JWT генерируется из JWT_SECRET через HMAC-SHA256
 - **`src/components/widgets/PreviewNode.vue`** — inject `dataService` (ShallowRef) с fallback; `dataService.value.fetchData()` вместо прямого вызова
 - build: ✅ 0 ошибок TypeScript (2472 модуля)
 
+### 2026-02-22 — Адаптивные макеты страниц + переключатель в превью (AI: Claude Sonnet 4.6)
+- **`src/types/breakpoints.ts`** (NEW) — `BreakpointId`, `Breakpoint`, `DEFAULT_BREAKPOINTS` (mobile 0px / tablet 479px / tabletLandscape 767px / desktop 991px)
+- **`src/stores/breakpoints.store.ts`** (NEW) — load/save брейкпоинтов из `ff_projects.breakpoints`; `activeId` (переключатель в редакторе); `getIdForWidth(w)` для рантайма
+- **`src/composables/useBreakpointMatch.ts`** (NEW) — реактивный `currentId` на основе `window.innerWidth` + resize listener
+- **`src/types/projects.ts`** — `Page` расширен: `responsiveLayouts?: Partial<Record<BreakpointId, string>>`
+- **`PageEditorView.vue`** — брейкпоинт-свитчер в тулбаре (Mobile/Tablet/TabletLandscape/Desktop); назначение разного макета для каждого брейкпоинта; `assignLayout()` сохраняет в `responsive_layouts` + `layout_id`; `resolveLayoutIdForBp()` с фолбеком
+- **`PagePreviewView.vue`** — загружает все макеты всех брейкпоинтов при монтировании; `layout` computed выбирает нужный по реальной ширине окна; добавлен плавающий переключатель **Auto / Mobile / Tablet / Tablet (landscape) / Desktop** (bpPinned override)
+- **`PreviewNode.vue`** — `breakpointVisibility` проверяется в `runtimeVisible` computed: если `bpVis[bpCurrentId] === false` — нода скрыта
+- **`WidgetEditorView.vue`** / **`LayoutEditorView.vue`** — брейкпоинт-свитчер в тулбаре (через `bpStore.activeId`)
+- **`ResponsiveSection.vue`** (NEW в PropertiesPanel) — 4 кнопки toggle видимости ноды по брейкпоинтам
+- **`PropertiesPanel.vue`** — мультиселект: баннер «N нод выбрано»; скрывает нод-специфичные секции при мультиселекте
+- **`docs/schema.sql`** — добавлена колонка `responsive_layouts jsonb NOT NULL DEFAULT '{}'` в `ff_pages`
+- **SQL миграция**: `ALTER TABLE ff_pages ADD COLUMN IF NOT EXISTS responsive_layouts jsonb NOT NULL DEFAULT '{}';`
+- **Баг-фикс**: колонка `responsive_layouts` отсутствовала в схеме → назначение макета не сохранялось → мобильный макет не применялся
+- build: ✅ 0 ошибок TypeScript
+
 ### 2026-02-22 — Слоты страницы + палитра цветов + PropertiesPanel редизайн (AI: Claude Sonnet 4.6)
 
 #### Множественные виджеты в слоте страницы
@@ -734,6 +766,15 @@ Service_role JWT генерируется из JWT_SECRET через HMAC-SHA256
 - PropertiesPanel: убраны табы → PropertySection-секции
 - WidgetRef как многовиджетный слот с DnD
 - PASSPORT.md обновлён, все изменения задокументированы
+
+### 2026-02-22 — Адаптивные макеты + брейкпоинт-свитчер в превью
+- Система брейкпоинтов: breakpoints.store, useBreakpointMatch, DEFAULT_BREAKPOINTS
+- Per-page responsive_layouts: каждая страница имеет разный макет на каждый брейкпоинт
+- PagePreviewView: плавающий переключатель Auto/Mobile/Tablet/Desktop
+- ResponsiveSection в PropertiesPanel: видимость нод по брейкпоинтам
+- Баг-фикс: добавлена колонка responsive_layouts в docs/schema.sql
+- SQL миграция: ALTER TABLE ff_pages ADD COLUMN IF NOT EXISTS responsive_layouts jsonb NOT NULL DEFAULT '{}'
+- PASSPORT.md обновлён
 </content>
 </file>
 </files>

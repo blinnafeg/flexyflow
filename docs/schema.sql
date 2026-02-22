@@ -34,16 +34,18 @@ create index if not exists ff_layouts_project_id_idx on ff_layouts(project_id);
 -- Pages
 -- ────────────────────────────────────────────────────────────────────────────
 create table if not exists ff_pages (
-  id           uuid primary key default gen_random_uuid(),
-  project_id   uuid not null references ff_projects(id) on delete cascade,
-  name         text not null,
-  slug         text not null,
-  layout_id    uuid references ff_layouts(id) on delete set null,
-  content      jsonb not null default '{}'::jsonb,
+  id                 uuid primary key default gen_random_uuid(),
+  project_id         uuid not null references ff_projects(id) on delete cascade,
+  name               text not null,
+  slug               text not null,
+  layout_id          uuid references ff_layouts(id) on delete set null,
+  responsive_layouts jsonb not null default '{}'::jsonb,
+  -- responsive_layouts shape: { mobile?: uuid, tablet?: uuid, tabletLandscape?: uuid, desktop?: uuid }
+  content            jsonb not null default '{}'::jsonb,
   -- content shape: { [slotName]: [{ widgetId, order }] }
-  is_published boolean not null default false,
-  created_at   timestamptz not null default now(),
-  updated_at   timestamptz not null default now(),
+  is_published       boolean not null default false,
+  created_at         timestamptz not null default now(),
+  updated_at         timestamptz not null default now(),
   unique(project_id, slug)
 );
 

@@ -14,7 +14,12 @@ const router = useRouter()
 const pageId = route.params.id as string
 
 const bpStore = useBreakpointsStore()
-const { currentId: bpCurrentId } = useBreakpointMatch()
+const { currentId: bpDetected } = useBreakpointMatch()
+
+/** Manually pinned breakpoint (null = auto-detect from window width) */
+const bpPinned = ref<BreakpointId | null>(null)
+
+const bpCurrentId = computed<BreakpointId>(() => bpPinned.value ?? bpDetected.value)
 
 const loading = ref(true)
 const error   = ref<string | null>(null)
@@ -170,17 +175,43 @@ onMounted(async () => {
 <template>
   <div class="min-h-screen bg-white">
 
-    <!-- Floating back button -->
-    <button
-      class="fixed bottom-5 right-5 z-50 flex items-center gap-2 bg-black/70 hover:bg-black/90 text-white text-xs px-3 py-2 rounded-full shadow-lg backdrop-blur-sm transition-colors"
-      title="Вернуться в FlexyFlow"
-      @click="router.push(`/pages/${pageId}/edit`)"
-    >
-      <svg class="size-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-      </svg>
-      FlexyFlow
-    </button>
+    <!-- Floating toolbar -->
+    <div class="fixed bottom-5 right-5 z-50 flex items-center gap-2">
+      <!-- Breakpoint switcher -->
+      <div class="flex items-center gap-1 bg-black/70 backdrop-blur-sm rounded-full px-2 py-1.5">
+        <!-- auto (follows window width) -->
+        <button
+          :class="[
+            'px-2 py-0.5 rounded-full text-xs transition-colors',
+            bpPinned === null ? 'bg-white text-black font-medium' : 'text-white/70 hover:text-white',
+          ]"
+          title="Авто (по ширине окна)"
+          @click="bpPinned = null"
+        >Auto</button>
+        <button
+          v-for="bp in bpStore.breakpoints"
+          :key="bp.id"
+          :class="[
+            'px-2 py-0.5 rounded-full text-xs transition-colors',
+            bpPinned === bp.id ? 'bg-white text-black font-medium' : 'text-white/70 hover:text-white',
+          ]"
+          :title="bp.label"
+          @click="bpPinned = bp.id"
+        >{{ bp.label }}</button>
+      </div>
+
+      <!-- Back button -->
+      <button
+        class="flex items-center gap-2 bg-black/70 hover:bg-black/90 text-white text-xs px-3 py-2 rounded-full shadow-lg backdrop-blur-sm transition-colors"
+        title="Вернуться в FlexyFlow"
+        @click="router.push(`/pages/${pageId}/edit`)"
+      >
+        <svg class="size-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+        </svg>
+        FlexyFlow
+      </button>
+    </div>
 
     <!-- Loading -->
     <div v-if="loading" class="flex items-center justify-center min-h-screen text-gray-400">
