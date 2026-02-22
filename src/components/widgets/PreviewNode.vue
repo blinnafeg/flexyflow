@@ -7,22 +7,31 @@ import { nodeToStyle } from '@/composables/useWidgetCss'
 import { loadGoogleFont } from '@/composables/useGoogleFonts'
 import { useActionExecutor } from '@/composables/useActionExecutor'
 import { useVisibilityStore } from '@/stores/visibility.store'
+import { useBreakpointMatch } from '@/composables/useBreakpointMatch'
 import { supabase } from '@/lib/supabase'
 import { DataSourceService } from '@/services/DataSourceService'
 import { resolveIcon } from '@/registry/icon-packages'
 
 const props = defineProps<{
   node: WidgetNode
+  /** Extra styles merged into the root element — used by parent to stretch this node into a flex container */
+  rootStyle?: Record<string, string | number>
 }>()
 
-const nodeStyle = () => nodeToStyle(props.node)
+/** nodeToStyle + optional rootStyle override (e.g. flex:1 when inside WidgetRef slot) */
+function ns(extra?: Record<string, string | number>) {
+  return { ...nodeToStyle(props.node), ...(props.rootStyle ?? {}), ...(extra ?? {}) }
+}
 const visibilityStore = useVisibilityStore()
 const { executeAll } = useActionExecutor()
+const { currentId: bpCurrentId } = useBreakpointMatch()
 
-// Runtime visibility: visibilityStore overrides design-time hidden flag
-const runtimeVisible = computed(() =>
-  visibilityStore.isVisible(props.node.id, !props.node.hidden)
-)
+// Runtime visibility: breakpoint → visibilityStore → design-time hidden flag
+const runtimeVisible = computed(() => {
+  const bpVis = props.node.breakpointVisibility
+  if (bpVis && (bpVis as Record<string, boolean>)[bpCurrentId.value] === false) return false
+  return visibilityStore.isVisible(props.node.id, !props.node.hidden)
+})
 
 const resolvedIcon = computed(() =>
   props.node.type === 'Icon'
@@ -184,7 +193,7 @@ function spanStyle(span: RichTextSpan): Record<string, string> {
   <!-- Column / Row / Container -->
   <div
     v-else-if="node.type === 'Column' || node.type === 'Row' || node.type === 'Container'"
-    :style="nodeStyle()"
+    :style="ns()"
     :class="node.actions?.onClick?.length ? 'cursor-pointer' : ''"
     @click="node.actions?.onClick?.length ? handleClick() : undefined"
   >
@@ -198,7 +207,7 @@ function spanStyle(span: RichTextSpan): Record<string, string> {
   <!-- Text -->
   <span
     v-else-if="node.type === 'Text'"
-    :style="nodeStyle()"
+    :style="ns()"
     :class="node.actions?.onClick?.length ? 'cursor-pointer' : ''"
     @click="node.actions?.onClick?.length ? handleClick() : undefined"
   >{{ node.props.text || '' }}</span>
@@ -206,7 +215,7 @@ function spanStyle(span: RichTextSpan): Record<string, string> {
   <!-- Button -->
   <button
     v-else-if="node.type === 'Button'"
-    :style="{ ...nodeStyle(), cursor: 'pointer', border: 'none' }"
+    :style="ns({ cursor: 'pointer', border: 'none' })"
     @click="handleClick"
     @mouseover="node.actions?.onHover?.length ? handleHover() : undefined"
   >{{ node.props.text || 'Button' }}</button>
@@ -215,7 +224,7 @@ function spanStyle(span: RichTextSpan): Record<string, string> {
   <input
     v-else-if="node.type === 'TextField'"
     :placeholder="node.props.placeholder || ''"
-    :style="{ ...nodeStyle(), outline: 'none' }"
+    :style="ns({ outline: 'none' })"
     @change="handleChange"
     @keydown.enter="handleSubmit"
   />
@@ -223,7 +232,7 @@ function spanStyle(span: RichTextSpan): Record<string, string> {
   <!-- RichText -->
   <p
     v-else-if="node.type === 'RichText'"
-    :style="nodeStyle()"
+    :style="ns()"
     :class="node.actions?.onClick?.length ? 'cursor-pointer' : ''"
     @click="node.actions?.onClick?.length ? handleClick() : undefined"
   >
@@ -237,7 +246,7 @@ function spanStyle(span: RichTextSpan): Record<string, string> {
   <!-- Icon -->
   <div
     v-else-if="node.type === 'Icon'"
-    :style="nodeStyle()"
+    :style="ns()"
     :class="['inline-flex items-center justify-center', node.actions?.onClick?.length ? 'cursor-pointer' : '']"
     @click="node.actions?.onClick?.length ? handleClick() : undefined"
   >
@@ -253,7 +262,7 @@ function spanStyle(span: RichTextSpan): Record<string, string> {
   <!-- WidgetRef / Slot — render all embedded widgets -->
   <div
     v-else-if="node.type === 'WidgetRef'"
-    :style="{ ...nodeStyle(), display: 'flex', flexDirection: node.props.slotOrientation ?? 'column' }"
+    :style="ns({ display: 'flex', flexDirection: node.props.slotOrientation ?? 'column', width: '100%' })"
   >
     <div v-if="embeddedLoading" class="text-xs text-gray-400 text-center py-2 animate-pulse">Загрузка...</div>
     <div v-else-if="embeddedError" class="text-xs text-red-400 text-center py-2">{{ embeddedError }}</div>
@@ -262,11 +271,12 @@ function spanStyle(span: RichTextSpan): Record<string, string> {
       v-for="(root, i) in embeddedRoots"
       :key="i"
       :node="root"
+      :root-style="{ flex: '1 1 0%', minWidth: '0', minHeight: '0', width: '100%' }"
     />
   </div>
 
   <!-- ListView — runtime render -->
-  <div v-else-if="node.type === 'ListView'" :style="{ width: nodeStyle().width }">
+  <div v-else-if="node.type === 'ListView'" :style="ns()">
     <!-- Loading -->
     <div v-if="listLoading" class="text-xs text-gray-400 text-center py-4 animate-pulse">
       Загрузка данных...

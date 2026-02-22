@@ -5,32 +5,56 @@ import type { Layout, GridSlot } from '@/types'
 import { supabase } from '@/lib/supabase'
 import { DataSourceService } from '@/services/DataSourceService'
 import WidgetRenderer from '@/components/widgets/WidgetRenderer.vue'
+import { useBreakpointsStore } from '@/stores/breakpoints.store'
+import { useBreakpointMatch } from '@/composables/useBreakpointMatch'
+import type { BreakpointId } from '@/types/breakpoints'
 
 const route  = useRoute()
 const router = useRouter()
 const pageId = route.params.id as string
 
+const bpStore = useBreakpointsStore()
+const { currentId: bpCurrentId } = useBreakpointMatch()
+
 const loading = ref(true)
 const error   = ref<string | null>(null)
-const layout  = ref<Layout | null>(null)
 
 // slotName → sorted widget entries
 const slotWidgets = ref<Record<string, { widgetId: string; order: number }[]>>({})
-// slotName → orientation
-const slotSettings = ref<Record<string, { orientation: 'row' | 'column' }>>({})
+// slotName → orientation / backgroundColor
+const slotSettings = ref<Record<string, { orientation: 'row' | 'column'; backgroundColor?: string }>>({})
 
 // Per-project data service — provided to all nested WidgetRenderer / PreviewNode
 const pageDataService = shallowRef<DataSourceService>(new DataSourceService())
 provide('dataService', pageDataService)
 
+/**
+ * All layouts loaded for the page keyed by BreakpointId.
+ * A breakpoint that has no explicit layout assigned will be null.
+ */
+const allLayouts = ref<Partial<Record<BreakpointId, Layout | null>>>({})
+
+/**
+ * Picks the right layout for the current viewport breakpoint.
+ * Fallback chain: mobile → tablet → tabletLandscape → desktop
+ */
+const layout = computed((): Layout | null => {
+  const bp = bpCurrentId.value
+  const l = allLayouts.value
+  if (bp === 'mobile')          return l.mobile          ?? l.tablet ?? l.tabletLandscape ?? l.desktop ?? null
+  if (bp === 'tablet')          return l.tablet          ?? l.tabletLandscape ?? l.desktop ?? null
+  if (bp === 'tabletLandscape') return l.tabletLandscape ?? l.desktop ?? null
+  return l.desktop ?? null
+})
+
 const gridStyle = computed(() => {
   const cfg = layout.value?.config
-  if (!cfg) return {}
+  if (!cfg) return { display: 'block' }
   return {
     display: 'grid',
-    gridTemplateColumns: cfg.colWidths?.join(' ') || '1fr',
-    gridTemplateRows:    cfg.rowHeights?.join(' ') || 'auto',
-    gap:        cfg.gap || '0px',
+    gridTemplateColumns: cfg.colWidths.join(' ') || '1fr',
+    gridTemplateRows:    cfg.rowHeights.join(' ') || 'auto',
+    gap:       cfg.gap || '0px',
     minHeight: '100vh',
   }
 })
@@ -50,6 +74,24 @@ function slotFlexStyle(slotName: string): Record<string, string> {
   }
 }
 
+async function loadLayoutById(layoutId: string): Promise<Layout | null> {
+  const { data, error: e } = await supabase
+    .from('ff_layouts')
+    .select('*')
+    .eq('id', layoutId)
+    .single()
+  if (e || !data) return null
+  return {
+    id:        data.id,
+    projectId: data.project_id,
+    name:      data.name,
+    config:    data.config,
+    slots:     data.slots ?? [],
+    createdAt: data.created_at,
+    updatedAt: data.updated_at,
+  }
+}
+
 onMounted(async () => {
   try {
     // Load page
@@ -59,6 +101,9 @@ onMounted(async () => {
       .eq('id', pageId)
       .single()
     if (pe) throw pe
+
+    // Load breakpoints for viewport detection
+    bpStore.load(pageData.project_id)
 
     // Load project credentials for per-project data service
     if (pageData.project_id) {
@@ -75,23 +120,29 @@ onMounted(async () => {
       }
     }
 
-    // Load layout
-    if (pageData.layout_id) {
-      const { data: layoutData, error: le } = await supabase
-        .from('ff_layouts')
-        .select('*')
-        .eq('id', pageData.layout_id)
-        .single()
-      if (le) throw le
-      layout.value = {
-        id:        layoutData.id,
-        projectId: layoutData.project_id,
-        name:      layoutData.name,
-        config:    layoutData.config,
-        slots:     layoutData.slots ?? [],
-        createdAt: layoutData.created_at,
-        updatedAt: layoutData.updated_at,
-      }
+    // Collect all unique layout IDs from responsive_layouts + layout_id
+    const responsiveLayouts = (pageData.responsive_layouts ?? {}) as Partial<Record<BreakpointId, string>>
+    const baseLayoutId = pageData.layout_id as string | null
+
+    const layoutIdSet = new Set<string>()
+    if (baseLayoutId) layoutIdSet.add(baseLayoutId)
+    for (const id of Object.values(responsiveLayouts)) {
+      if (id) layoutIdSet.add(id)
+    }
+
+    // Load all referenced layouts in parallel
+    const layoutMap = new Map<string, Layout>()
+    await Promise.all([...layoutIdSet].map(async (id) => {
+      const l = await loadLayoutById(id)
+      if (l) layoutMap.set(id, l)
+    }))
+
+    // Build per-breakpoint layout map
+    const bpIds: BreakpointId[] = ['desktop', 'tabletLandscape', 'tablet', 'mobile']
+    for (const bp of bpIds) {
+      const id = (responsiveLayouts as Record<string, string>)[bp]
+               ?? (bp === 'desktop' ? baseLayoutId : null)
+      allLayouts.value[bp] = id ? (layoutMap.get(id) ?? null) : null
     }
 
     // Parse content: separate _settings from widget assignments
@@ -145,7 +196,7 @@ onMounted(async () => {
       {{ error }}
     </div>
 
-    <!-- No layout -->
+    <!-- No layout for current breakpoint -->
     <div v-else-if="!layout" class="flex items-center justify-center min-h-screen text-gray-400">
       Страница не настроена
     </div>
@@ -153,7 +204,7 @@ onMounted(async () => {
     <!-- Page render -->
     <div v-else :style="gridStyle">
       <div
-        v-for="slot in layout.slots"
+        v-for="slot in (layout.slots ?? [])"
         :key="slot.id"
         :style="{
           ...slotStyle(slot),

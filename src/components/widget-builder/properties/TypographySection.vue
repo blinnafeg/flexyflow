@@ -17,7 +17,7 @@ function update(patch: Partial<TypographyProps>) {
   const cur = node.value.props.typography ?? {
     fontSize: 14, fontWeight: '400', lineHeight: 1.5, letterSpacing: 0, textAlign: 'left',
   }
-  store.updateProps(node.value.id, { typography: { ...cur, ...patch } })
+  store.updatePropsSelected({ typography: { ...cur, ...patch } })
 }
 
 const aligns = [

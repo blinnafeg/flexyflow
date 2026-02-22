@@ -4,18 +4,26 @@ import type { WidgetNode, RichTextSpan } from '@/types/widget-builder'
 import { nodeToStyle } from '@/composables/useWidgetCss'
 import { loadGoogleFont } from '@/composables/useGoogleFonts'
 import { useWidgetBuilderStore } from '@/stores/widget-builder.store'
+import { useBreakpointsStore } from '@/stores/breakpoints.store'
 import { resolveIcon } from '@/registry/icon-packages'
 import { Badge } from '@/components/ui/badge'
+import WidgetRenderer from '@/components/widgets/WidgetRenderer.vue'
 
 const props = defineProps<{
   node: WidgetNode
   editorMode?: boolean  // false = публичный рендер без выделения
 }>()
 
-const store = useWidgetBuilderStore()
-const isSelected = computed(() => props.editorMode && store.selectedId === props.node.id)
+const store   = useWidgetBuilderStore()
+const bpStore = useBreakpointsStore()
+const isSelected = computed(() => props.editorMode && store.selectedIds.has(props.node.id))
 const nodeStyle  = computed(() => nodeToStyle(props.node))
-const isHidden   = computed(() => !!props.node.hidden)
+const isHidden   = computed(() => {
+  const bpVis = props.node.breakpointVisibility
+  if (bpVis && bpStore.activeId in bpVis)
+    return (bpVis as Record<string, boolean>)[bpStore.activeId] === false
+  return !!props.node.hidden
+})
 const isLocked   = computed(() => !!props.node.locked)
 const resolvedIcon = computed(() =>
   props.node.type === 'Icon'
@@ -33,7 +41,11 @@ const slotItems = computed(() => {
 function onClick(e: MouseEvent) {
   if (!props.editorMode) return
   e.stopPropagation()
-  store.select(props.node.id)
+  if (e.shiftKey) {
+    store.toggleSelectNode(props.node.id)
+  } else {
+    store.select(props.node.id)
+  }
 }
 
 // Classes applied to every rendered node in editor mode
@@ -143,30 +155,36 @@ function spanStyle(span: RichTextSpan): Record<string, string> {
     >icon</span>
   </div>
 
-  <!-- WidgetRef / Slot — editor placeholder -->
+  <!-- WidgetRef / Slot — renders actual embedded widgets in editor -->
   <div
     v-else-if="node.type === 'WidgetRef'"
-    :style="{ width: nodeStyle.width, padding: nodeStyle.padding, margin: nodeStyle.margin }"
+    :style="{ ...nodeStyle, position: 'relative', display: 'flex', flexDirection: node.props.slotOrientation ?? 'column', width: '100%' }"
     :class="[
-      'flex flex-col items-center justify-center gap-1.5 rounded-md border-2 border-dashed min-h-[48px] select-none cursor-pointer transition-colors p-2',
-      isSelected
-        ? 'border-violet-500 bg-violet-500/5'
-        : 'border-violet-300/60 bg-violet-50/30 hover:bg-violet-50/60 dark:bg-violet-900/10',
+      'cursor-pointer',
+      isSelected ? 'outline outline-2 outline-violet-500' : 'outline outline-1 outline-violet-300/50',
       editorOverlayClass,
     ]"
     @click="onClick"
   >
-    <div class="text-[11px] font-semibold text-violet-500">Slot</div>
-    <div v-if="slotItems.length === 0" class="text-[10px] text-muted-foreground/60 italic">Не настроен</div>
-    <div v-else class="flex flex-wrap gap-1 justify-center max-w-[160px]">
-      <Badge
-        v-for="w in slotItems"
-        :key="w.id"
-        variant="secondary"
-        class="text-[9px] px-1.5 py-0 text-violet-600 bg-violet-100 dark:bg-violet-900/30"
-      >
-        {{ w.name }}
-      </Badge>
+    <!-- Small "Slot" label in top-left corner -->
+    <div class="absolute top-0 left-0 z-10 text-[9px] font-semibold text-violet-500 bg-white/90 dark:bg-zinc-900/90 px-1.5 py-0.5 rounded-br select-none pointer-events-none leading-tight">
+      Slot
+    </div>
+
+    <!-- Empty state -->
+    <div v-if="slotItems.length === 0" class="min-h-[48px] flex items-center justify-center select-none">
+      <span class="text-[10px] text-muted-foreground/60 italic">Не настроен</span>
+    </div>
+
+    <!-- Render each embedded widget (read-only, clicks handled by parent) -->
+    <div
+      v-else
+      v-for="w in slotItems"
+      :key="w.id"
+      class="pointer-events-none"
+      style="flex: 1 1 0%; min-width: 0; width: 100%;"
+    >
+      <WidgetRenderer :widget-id="w.id" />
     </div>
   </div>
 

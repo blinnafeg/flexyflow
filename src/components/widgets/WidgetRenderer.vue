@@ -69,5 +69,7 @@ onMounted(async () => {
   <PreviewNode
     v-else-if="root"
     :node="root"
+    :root-style="{ width: '100%' }"
   />
+
 </template>

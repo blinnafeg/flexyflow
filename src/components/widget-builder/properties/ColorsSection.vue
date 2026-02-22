@@ -8,11 +8,11 @@ const store = useWidgetBuilderStore()
 const node = computed(() => store.selectedNode!)
 
 function updateColor(field: 'backgroundColor' | 'color', val: string) {
-  store.updateProps(node.value.id, { [field]: val })
+  store.updatePropsSelected( { [field]: val })
 }
 
 function updateOpacity(val: number) {
-  store.updateProps(node.value.id, { opacity: Math.max(0, Math.min(100, val)) })
+  store.updatePropsSelected( { opacity: Math.max(0, Math.min(100, val)) })
 }
 </script>
 

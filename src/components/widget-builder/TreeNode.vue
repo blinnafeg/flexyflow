@@ -50,7 +50,7 @@ const showChildren = computed(() => {
 })
 
 // ── State ─────────────────────────────────────────────────────────────────────
-const isSelected  = computed(() => store.selectedId === props.node.id)
+const isSelected  = computed(() => store.selectedIds.has(props.node.id))
 const hasChildren = computed(() => props.node.children.length > 0)
 const isContainer = computed(() => canHaveChildren(props.node.type))
 const isRoot      = computed(() => store.widget?.root.id === props.node.id)
@@ -160,7 +160,7 @@ function duplicate() {
       ]"
       :style="{ paddingLeft: `${depth * 12 + 4}px` }"
       :draggable="!isRoot && !isLocked"
-      @click.stop="store.select(node.id)"
+      @click.stop="($event as MouseEvent).shiftKey ? store.toggleSelectNode(node.id) : store.select(node.id)"
       @dblclick.stop="startRename"
       @dragstart="onDragStart"
       @dragover="onDragOver"

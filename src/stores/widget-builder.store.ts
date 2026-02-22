@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref, computed, watchEffect } from 'vue'
 import { nanoid } from 'nanoid'
 import type { WidgetNode, WidgetType, WidgetNodeProps, WidgetDefinition, NodeActions } from '@/types/widget-builder'
+import type { BreakpointId } from '@/types/breakpoints'
 
 // Deep-clone a node tree with fresh IDs
 function deepCloneNode(node: WidgetNode): WidgetNode {
@@ -46,6 +47,7 @@ const DEFAULT_LIST_ITEM_META = (): ListItemMeta => ({
 export const useWidgetBuilderStore = defineStore('widgetBuilder', () => {
   const widget = ref<WidgetDefinition | null>(null)
   const selectedId = ref<string | null>(null)
+  const selectedIds = ref<Set<string>>(new Set())
   const isDirty = ref(false)
 
   // Widget-level metadata (not node-level)
@@ -62,6 +64,12 @@ export const useWidgetBuilderStore = defineStore('widgetBuilder', () => {
 
   const selectedNode = computed(() =>
     selectedId.value ? (index.value.get(selectedId.value) ?? null) : null
+  )
+
+  const isMultiSelect = computed(() => selectedIds.value.size > 1)
+
+  const selectedNodes = computed(() =>
+    [...selectedIds.value].map(id => index.value.get(id)).filter(Boolean) as WidgetNode[]
   )
 
   // ── Load ─────────────────────────────────────────────────────────────────
@@ -102,6 +110,7 @@ export const useWidgetBuilderStore = defineStore('widgetBuilder', () => {
     widgetKind.value = kind
     listItemMeta.value = meta
     selectedId.value = root.id
+    selectedIds.value = new Set([root.id])
     isDirty.value = false
   }
 
@@ -127,6 +136,19 @@ export const useWidgetBuilderStore = defineStore('widgetBuilder', () => {
 
   function select(id: string | null) {
     selectedId.value = id
+    selectedIds.value = id ? new Set([id]) : new Set()
+  }
+
+  function toggleSelectNode(id: string) {
+    const set = new Set(selectedIds.value)
+    if (set.has(id) && set.size > 1) {
+      set.delete(id)
+      if (selectedId.value === id) selectedId.value = [...set][0] ?? null
+    } else {
+      set.add(id)
+      selectedId.value = id
+    }
+    selectedIds.value = set
   }
 
   // ── Node props update ─────────────────────────────────────────────────────
@@ -150,6 +172,12 @@ export const useWidgetBuilderStore = defineStore('widgetBuilder', () => {
       }
     }
     isDirty.value = true
+  }
+
+  function updatePropsSelected(patch: Partial<WidgetNodeProps>) {
+    for (const id of selectedIds.value) {
+      updateProps(id, patch)
+    }
   }
 
   function renameNode(id: string, name: string) {
@@ -254,7 +282,10 @@ export const useWidgetBuilderStore = defineStore('widgetBuilder', () => {
   function deleteNode(id: string) {
     if (!widget.value || id === widget.value.root.id) return
     removeNode(widget.value.root, id)
-    if (selectedId.value === id) selectedId.value = null
+    const s = new Set(selectedIds.value)
+    s.delete(id)
+    selectedIds.value = s
+    if (selectedId.value === id) selectedId.value = [...s][0] ?? null
     isDirty.value = true
   }
 
@@ -370,9 +401,28 @@ export const useWidgetBuilderStore = defineStore('widgetBuilder', () => {
     isDirty.value = true
   }
 
+  /**
+   * Set visibility for a specific breakpoint.
+   * visible=false  → hidden at that breakpoint
+   * visible=null   → remove override (default: visible)
+   */
+  function setBreakpointVisibility(nodeId: string, bpId: BreakpointId, visible: boolean | null) {
+    const node = index.value.get(nodeId)
+    if (!node) return
+    const cur: Partial<Record<BreakpointId, boolean>> = { ...(node.breakpointVisibility ?? {}) }
+    if (visible === null) {
+      delete cur[bpId]
+    } else {
+      cur[bpId] = visible
+    }
+    node.breakpointVisibility = Object.keys(cur).length > 0 ? cur : undefined
+    isDirty.value = true
+  }
+
   function $reset() {
     widget.value = null
     selectedId.value = null
+    selectedIds.value = new Set()
     isDirty.value = false
     index.value = new Map()
     widgetKind.value = 'standard'
@@ -380,16 +430,17 @@ export const useWidgetBuilderStore = defineStore('widgetBuilder', () => {
   }
 
   return {
-    widget, selectedId, selectedNode, isDirty,
+    widget, selectedId, selectedIds, selectedNode, selectedNodes, isMultiSelect, isDirty,
     widgetKind, listItemMeta,
-    load, save, select, $reset,
-    updateProps, renameNode,
+    load, save, select, toggleSelectNode, $reset,
+    updateProps, updatePropsSelected, renameNode,
     setWidgetKind, updateListItemMeta, setDataBinding, removeDataBinding,
     addChild, addSibling, addWidgetRefAsChild, addWidgetRefAsSibling, updateSlotItems,
     deleteNode, moveUp, moveDown, wrapInColumn,
     wrapIn, duplicateNode, moveNode,
     toggleNodeVisibility, toggleNodeLock,
     updateNodeActions,
+    setBreakpointVisibility,
     index,
   }
 })

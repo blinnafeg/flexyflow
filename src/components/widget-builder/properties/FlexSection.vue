@@ -16,7 +16,7 @@ function update(patch: Partial<FlexProps>) {
     direction: 'column', alignItems: 'flex-start',
     justifyContent: 'flex-start', gap: 0, wrap: false,
   }
-  store.updateProps(node.value.id, { flex: { ...cur, ...patch } })
+  store.updatePropsSelected({ flex: { ...cur, ...patch } })
 }
 
 const DEFAULT_FLEX = (): FlexProps => ({

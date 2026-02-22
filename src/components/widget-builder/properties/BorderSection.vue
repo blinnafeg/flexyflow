@@ -13,22 +13,22 @@ const store = useWidgetBuilderStore()
 const node = computed(() => store.selectedNode!)
 
 function updateBorder(patch: object) {
-  store.updateProps(node.value.id, { border: { ...node.value.props.border, ...patch } as any })
+  store.updatePropsSelected( { border: { ...node.value.props.border, ...patch } as any })
 }
 
 function updateRadius(side: 'topLeft' | 'topRight' | 'bottomRight' | 'bottomLeft', val: number) {
   const r = node.value.props.borderRadius
   if (r.linked) {
-    store.updateProps(node.value.id, {
+    store.updatePropsSelected( {
       borderRadius: { ...r, topLeft: val, topRight: val, bottomRight: val, bottomLeft: val },
     })
   } else {
-    store.updateProps(node.value.id, { borderRadius: { ...r, [side]: val } })
+    store.updatePropsSelected( { borderRadius: { ...r, [side]: val } })
   }
 }
 
 function toggleLinked() {
-  store.updateProps(node.value.id, {
+  store.updatePropsSelected( {
     borderRadius: { ...node.value.props.borderRadius, linked: !node.value.props.borderRadius.linked },
   })
 }

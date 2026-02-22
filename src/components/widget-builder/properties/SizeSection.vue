@@ -13,7 +13,7 @@ const node = computed(() => store.selectedNode!)
 
 function updateSize(field: 'width' | 'height' | 'minWidth' | 'minHeight' | 'maxWidth' | 'maxHeight', patch: Partial<SizeValue>) {
   const cur = (node.value.props[field] as SizeValue | undefined) ?? { value: 0, unit: 'px' as SizeUnit }
-  store.updateProps(node.value.id, { [field]: { ...cur, ...patch } })
+  store.updatePropsSelected({ [field]: { ...cur, ...patch } })
 }
 
 function setUnit(field: 'width' | 'height', unit: SizeUnit) {

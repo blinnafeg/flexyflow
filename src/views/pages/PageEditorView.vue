@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { Page, Layout, GridSlot } from '@/types'
 import { supabase } from '@/lib/supabase'
@@ -11,10 +11,12 @@ import { Separator } from '@/components/ui/separator'
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
-import { ArrowLeft, Save, Globe, Loader2, Settings, X, LayoutGrid, Puzzle, ExternalLink, Eye, Zap, Plus, GripVertical } from 'lucide-vue-next'
+import { ArrowLeft, Save, Globe, Loader2, Settings, X, LayoutGrid, Puzzle, ExternalLink, Eye, Zap, Plus, GripVertical, Smartphone, Tablet, Monitor } from 'lucide-vue-next'
 import { toast } from 'vue-sonner'
 import { usePaletteStore } from '@/stores/palette.store'
+import { useBreakpointsStore } from '@/stores/breakpoints.store'
 import ColorPickerInput from '@/components/color-picker/ColorPickerInput.vue'
+import type { BreakpointId } from '@/types/breakpoints'
 
 const route = useRoute()
 const router = useRouter()
@@ -35,6 +37,14 @@ type SlotSettingEntry = { orientation: 'row' | 'column'; backgroundColor?: strin
 const slotSettings = ref<Record<string, SlotSettingEntry>>({})
 
 const palette = usePaletteStore()
+const bpStore = useBreakpointsStore()
+
+const BP_ICONS: Record<BreakpointId, typeof Smartphone> = {
+  mobile:          Smartphone,
+  tablet:          Tablet,
+  tabletLandscape: Tablet,
+  desktop:         Monitor,
+}
 
 // DnD state for the current slot's widget list
 const dragIndex = ref<number | null>(null)
@@ -46,6 +56,26 @@ const selectedWidgetToAdd = ref<string>('')
 interface SlotWorkflow { id: string; name: string; trigger: string; steps: unknown[] }
 const slotWorkflows = ref<SlotWorkflow[]>([])
 const loadingSlotWorkflows = ref(false)
+
+// ── Responsive layout resolution ────────────────────────────────────────────
+
+/**
+ * Returns the layout ID that should be shown for a given breakpoint.
+ * Fallback chain: mobile → tablet → tabletLandscape → desktop → layoutId
+ */
+function resolveLayoutIdForBp(bp: BreakpointId): string | undefined {
+  const rl = page.value?.responsiveLayouts ?? {}
+  if (bp === 'mobile')          return rl.mobile          ?? rl.tablet ?? rl.tabletLandscape ?? rl.desktop ?? page.value?.layoutId
+  if (bp === 'tablet')          return rl.tablet          ?? rl.tabletLandscape ?? rl.desktop ?? page.value?.layoutId
+  if (bp === 'tabletLandscape') return rl.tabletLandscape ?? rl.desktop ?? page.value?.layoutId
+  return rl.desktop ?? page.value?.layoutId
+}
+
+/** The layout ID explicitly set for the active breakpoint (no fallback) */
+const activeBpLayoutId = computed<string>(() => {
+  const rl = page.value?.responsiveLayouts ?? {}
+  return (rl as Record<string, string>)[bpStore.activeId] ?? page.value?.layoutId ?? '__none__'
+})
 
 // Grid styles
 const gridStyle = computed(() => {
@@ -78,6 +108,11 @@ function getSlotOrientation(slotName: string): 'row' | 'column' {
 
 function getWidgetName(widgetId: string): string {
   return availableWidgets.value.find(w => w.id === widgetId)?.name ?? widgetId
+}
+
+function getLayoutName(layoutId: string | undefined): string {
+  if (!layoutId) return '—'
+  return availableLayouts.value.find(l => l.id === layoutId)?.name ?? '—'
 }
 
 /** Widgets available to add (not yet in the selected slot) */
@@ -142,7 +177,7 @@ function openSettings() {
   selectedSlot.value = null
 }
 
-async function loadLayout(layoutId: string) {
+async function loadLayoutById(layoutId: string): Promise<Layout | null> {
   const { data, error } = await supabase
     .from('ff_layouts')
     .select('*')
@@ -185,7 +220,8 @@ onMounted(async () => {
       projectId: pageData.project_id,
       name: pageData.name,
       slug: pageData.slug,
-      layoutId: pageData.layout_id,
+      layoutId: pageData.layout_id ?? undefined,
+      responsiveLayouts: (pageData.responsive_layouts ?? {}) as Partial<Record<BreakpointId, string>>,
       content: cleanContent,
       slotSettings: extractedSettings,
       isPublished: pageData.is_published ?? false,
@@ -193,8 +229,10 @@ onMounted(async () => {
       updatedAt: pageData.updated_at,
     }
 
-    if (pageData.layout_id) {
-      layout.value = await loadLayout(pageData.layout_id)
+    // Load the layout for the initial breakpoint (desktop)
+    const initialLayoutId = resolveLayoutIdForBp(bpStore.activeId)
+    if (initialLayoutId) {
+      layout.value = await loadLayoutById(initialLayoutId)
     }
 
     const [layoutsRes, widgetsRes] = await Promise.all([
@@ -225,8 +263,8 @@ onMounted(async () => {
       name: w.name as string,
     }))
 
-    // Load project color palette (non-blocking)
     palette.load(pageData.project_id)
+    bpStore.load(pageData.project_id)
   } catch (e: unknown) {
     toast.error((e as Error).message)
   } finally {
@@ -234,18 +272,44 @@ onMounted(async () => {
   }
 })
 
-// Assign layout to page
+// When breakpoint changes — load the layout for that breakpoint
+watch(() => bpStore.activeId, async (bp) => {
+  if (!page.value) return
+  const layoutId = resolveLayoutIdForBp(bp)
+  layout.value = layoutId ? await loadLayoutById(layoutId) : null
+  selectedSlot.value = null
+})
+
+onUnmounted(() => {
+  bpStore.activeId = 'desktop'
+})
+
+// Assign layout for the currently active breakpoint
 async function assignLayout(layoutId: string | null) {
   if (!page.value) return
   try {
-    const { error } = await supabase
-      .from('ff_pages')
-      .update({ layout_id: layoutId })
-      .eq('id', pageId)
+    const bp = bpStore.activeId
+    const rl: Partial<Record<BreakpointId, string>> = { ...(page.value.responsiveLayouts ?? {}) }
+
+    if (layoutId) {
+      rl[bp] = layoutId
+    } else {
+      delete rl[bp]
+    }
+
+    // Keep layout_id in sync with the desktop layout for backward compat
+    const desktopId = rl.desktop ?? page.value.layoutId ?? null
+    const updates: Record<string, unknown> = {
+      responsive_layouts: rl,
+      layout_id: desktopId,
+    }
+
+    const { error } = await supabase.from('ff_pages').update(updates).eq('id', pageId)
     if (error) throw error
 
-    page.value.layoutId = layoutId ?? undefined
-    layout.value = layoutId ? (await loadLayout(layoutId)) : null
+    page.value.responsiveLayouts = rl
+    page.value.layoutId = desktopId ?? undefined
+    layout.value = layoutId ? await loadLayoutById(layoutId) : null
     selectedSlot.value = null
     toast.success(layoutId ? 'Макет назначен' : 'Макет снят')
   } catch (e: unknown) {
@@ -422,6 +486,27 @@ async function save() {
         >
           <Settings class="size-4" />
         </Button>
+        <!-- Breakpoint switcher -->
+        <div class="flex items-center gap-0.5 border rounded-md p-0.5 shrink-0">
+          <button
+            v-for="bp in bpStore.breakpoints"
+            :key="bp.id"
+            :title="`${bp.label} (${bp.canvasWidth}px)`"
+            class="h-6 w-6 flex items-center justify-center rounded transition-colors"
+            :class="bpStore.activeId === bp.id
+              ? 'bg-primary text-primary-foreground'
+              : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'"
+            @click="bpStore.activeId = bp.id"
+          >
+            <component :is="BP_ICONS[bp.id]" class="size-3.5" />
+          </button>
+        </div>
+        <span class="text-xs text-muted-foreground font-mono shrink-0">
+          {{ bpStore.active.canvasWidth }}px
+        </span>
+
+        <div class="w-px h-5 bg-border shrink-0" />
+
         <Button :disabled="saving" class="shrink-0" @click="save">
           <Loader2 v-if="saving" class="size-4 mr-1 animate-spin" />
           <Save v-else class="size-4 mr-1" />
@@ -439,14 +524,16 @@ async function save() {
           <p class="text-muted-foreground">Страница не найдена</p>
         </div>
 
-        <div v-else-if="layout" class="h-full" :style="gridStyle">
+        <div v-else-if="layout" :style="[gridStyle, { width: bpStore.active.canvasWidth + 'px', minWidth: '320px', marginLeft: 'auto', marginRight: 'auto' }]">
           <div
             v-for="slot in layout.slots"
             :key="slot.id"
             class="border border-dashed min-h-[80px] relative cursor-pointer transition-colors"
-            :class="selectedSlot?.id === slot.id
-              ? 'border-primary/70 bg-primary/5'
-              : 'border-border/60 hover:border-border hover:bg-accent/20'"
+            :class="[
+              selectedSlot?.id === slot.id
+                ? 'border-primary/70 bg-primary/5'
+                : 'border-border/60 hover:border-border hover:bg-accent/20',
+            ]"
             :style="{
               ...slotStyle(slot),
               backgroundColor: slotSettings[slot.name]?.backgroundColor || undefined,
@@ -490,7 +577,7 @@ async function save() {
         <div v-else class="flex items-center justify-center h-full">
           <div class="text-center text-muted-foreground">
             <LayoutGrid class="size-10 mx-auto mb-3 opacity-30" />
-            <p class="mb-1">Макет не назначен</p>
+            <p class="mb-1">Макет не назначен для {{ bpStore.active.label }}</p>
             <p class="text-xs">Откройте настройки страницы (⚙) и выберите макет</p>
           </div>
         </div>
@@ -513,7 +600,6 @@ async function save() {
       </div>
 
       <div class="flex-1 overflow-y-auto p-4 space-y-4">
-
         <!-- Widgets in slot -->
         <div class="space-y-2">
           <!-- Header + orientation toggle -->
@@ -729,9 +815,15 @@ async function save() {
 
         <Separator />
 
-        <!-- Layout selector -->
+        <!-- Layout selector (per breakpoint) -->
         <div class="space-y-2">
-          <Label class="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Макет</Label>
+          <div class="flex items-center justify-between">
+            <Label class="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Макет</Label>
+            <div class="flex items-center gap-1 text-xs text-muted-foreground">
+              <component :is="BP_ICONS[bpStore.activeId]" class="size-3" />
+              {{ bpStore.active.label }}
+            </div>
+          </div>
 
           <div v-if="availableLayouts.length === 0" class="text-xs text-muted-foreground py-2">
             Нет макетов в проекте.
@@ -743,14 +835,16 @@ async function save() {
 
           <template v-else>
             <Select
-              :model-value="page?.layoutId ?? '__none__'"
+              :model-value="activeBpLayoutId"
               @update:model-value="assignLayout(String($event) === '__none__' ? null : String($event))"
             >
               <SelectTrigger class="h-8 text-sm">
                 <SelectValue placeholder="Выберите макет..." />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="__none__">— Без макета —</SelectItem>
+                <SelectItem value="__none__">
+                  {{ bpStore.activeId === 'desktop' ? '— Без макета —' : '← как Desktop' }}
+                </SelectItem>
                 <SelectItem
                   v-for="l in availableLayouts"
                   :key="l.id"
@@ -772,6 +866,27 @@ async function save() {
                 class="text-primary underline"
                 @click="router.push(`/layouts/${layout!.id}/edit`)"
               >Редактировать макет ↗</button>
+            </div>
+
+            <!-- Per-breakpoint summary -->
+            <div class="rounded-md border p-2.5 bg-muted/10 space-y-1.5">
+              <p class="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Все брейкпоинты</p>
+              <div
+                v-for="bp in bpStore.breakpoints"
+                :key="bp.id"
+                class="flex items-center gap-2 text-xs"
+              >
+                <component :is="BP_ICONS[bp.id]" class="size-3 text-muted-foreground shrink-0" />
+                <span class="text-muted-foreground w-24 shrink-0">{{ bp.label }}</span>
+                <span
+                  class="truncate"
+                  :class="(page.responsiveLayouts ?? {})[bp.id] ? 'text-foreground' : 'text-muted-foreground/50 italic'"
+                >
+                  {{ (page.responsiveLayouts ?? {})[bp.id]
+                    ? getLayoutName((page.responsiveLayouts ?? {})[bp.id])
+                    : (bp.id === 'desktop' ? (getLayoutName(page.layoutId) !== '—' ? getLayoutName(page.layoutId) : 'не задан') : '← Desktop') }}
+                </span>
+              </div>
             </div>
           </template>
         </div>

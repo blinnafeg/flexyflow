@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { Project, Page, Layout } from '@/types'
+import type { BreakpointId } from '@/types/breakpoints'
 import { supabase } from '@/lib/supabase'
 import { DataSourceService } from '@/services/DataSourceService'
 
@@ -94,6 +95,7 @@ export const useProjectsStore = defineStore('projects', () => {
         name: payload.name,
         slug: payload.slug,
         layout_id: payload.layoutId,
+        responsive_layouts: payload.responsiveLayouts,
         content: payload.content,
         is_published: payload.isPublished,
       })
@@ -208,6 +210,7 @@ export const useProjectsStore = defineStore('projects', () => {
       name: row.name as string,
       slug: row.slug as string,
       layoutId: row.layout_id as string | undefined,
+      responsiveLayouts: (row.responsive_layouts as Partial<Record<BreakpointId, string>>) ?? {},
       content: (row.content as Record<string, { widgetId: string; order: number }[]>) ?? {},
       slotSettings: {},
       isPublished: (row.is_published as boolean) ?? false,

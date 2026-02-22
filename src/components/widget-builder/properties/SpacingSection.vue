@@ -14,9 +14,9 @@ const marginLinked = ref(false)
 
 function updateSpacing(field: 'padding' | 'margin', side: keyof SpacingSide, val: number, linked: boolean) {
   if (linked) {
-    store.updateProps(node.value.id, { [field]: { top: val, right: val, bottom: val, left: val } })
+    store.updatePropsSelected({ [field]: { top: val, right: val, bottom: val, left: val } })
   } else {
-    store.updateProps(node.value.id, { [field]: { ...node.value.props[field], [side]: val } })
+    store.updatePropsSelected({ [field]: { ...node.value.props[field], [side]: val } })
   }
 }
 </script>

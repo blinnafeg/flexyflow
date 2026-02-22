@@ -59,6 +59,7 @@ export interface RichTextSpan {
 
 import type { ListViewConfig } from './list-view'
 import type { ActionStep, TriggerType } from './actions'
+import type { BreakpointId } from './breakpoints'
 
 // Map of trigger → action steps (stored inline on the node)
 export type NodeActions = Partial<Record<TriggerType, ActionStep[]>>
@@ -121,6 +122,8 @@ export interface WidgetNode {
   hidden?: boolean   // hides on canvas in editor (skipped in preview)
   locked?: boolean   // blocks accidental editing from tree action buttons
   actions?: NodeActions  // inline action steps per trigger
+  /** Per-breakpoint visibility: false = hidden at that breakpoint, undefined = default (visible) */
+  breakpointVisibility?: Partial<Record<BreakpointId, boolean>>
 }
 
 export interface WidgetDefinition {

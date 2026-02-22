@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { ref, computed } from 'vue'
 import { nanoid } from 'nanoid'
 import type { GridSlot } from '@/types'
 import { Button } from '@/components/ui/button'
@@ -222,6 +222,7 @@ function updateRowHeight(idx: number, val: string) {
   heights[idx] = val || 'auto'
   emit('update:rowHeights', heights)
 }
+
 </script>
 
 <template>
@@ -247,7 +248,7 @@ function updateRowHeight(idx: number, val: string) {
           <Input
             :model-value="gap"
             class="h-7 w-20 text-xs"
-            @update:model-value="emit('update:gap', $event)"
+            @update:model-value="emit('update:gap', String($event))"
           />
         </div>
         <Button
@@ -267,7 +268,7 @@ function updateRowHeight(idx: number, val: string) {
           <Input
             :model-value="w"
             class="h-6 text-xs text-center px-1"
-            @update:model-value="updateColWidth(i, $event)"
+            @update:model-value="updateColWidth(i, String($event))"
           />
         </div>
       </div>
@@ -364,7 +365,7 @@ function updateRowHeight(idx: number, val: string) {
             <Input
               :model-value="h"
               class="h-7 text-xs"
-              @update:model-value="updateRowHeight(i, $event)"
+              @update:model-value="updateRowHeight(i, String($event))"
             />
           </div>
         </div>

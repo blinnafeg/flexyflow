@@ -11,13 +11,23 @@ import { Badge } from '@/components/ui/badge'
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
-import { ArrowLeft, Save, Loader2, Ruler, List } from 'lucide-vue-next'
+import { ArrowLeft, Save, Loader2, Ruler, List, Smartphone, Tablet, Monitor } from 'lucide-vue-next'
 import { toast } from 'vue-sonner'
+import { useBreakpointsStore } from '@/stores/breakpoints.store'
+import type { BreakpointId } from '@/types/breakpoints'
 
 const route   = useRoute()
 const router  = useRouter()
 const store   = useWidgetBuilderStore()
 const palette = usePaletteStore()
+const bpStore = useBreakpointsStore()
+
+const BP_ICONS: Record<BreakpointId, typeof Smartphone> = {
+  mobile:          Smartphone,
+  tablet:          Tablet,
+  tabletLandscape: Tablet,
+  desktop:         Monitor,
+}
 
 const widgetId = route.params.id as string
 const loading  = ref(true)
@@ -98,6 +108,7 @@ onMounted(async () => {
     await store.load(widgetId)
     if (store.widget?.projectId) {
       palette.load(store.widget.projectId)
+      bpStore.load(store.widget.projectId)
     }
   } catch (e: unknown) {
     toast.error((e as Error).message)
@@ -109,6 +120,7 @@ onMounted(async () => {
 onUnmounted(() => {
   detachRO()
   store.$reset()
+  bpStore.activeId = 'desktop'
 })
 
 async function handleSave() {
@@ -167,6 +179,27 @@ onUnmounted(() => window.removeEventListener('keydown', onKeyDown))
       >
         <Ruler class="size-4" />
       </Button>
+
+      <div class="w-px h-5 bg-border shrink-0" />
+
+      <!-- Breakpoint switcher -->
+      <div class="flex items-center gap-0.5 border rounded-md p-0.5 shrink-0">
+        <button
+          v-for="bp in bpStore.breakpoints"
+          :key="bp.id"
+          :title="`${bp.label} (${bp.canvasWidth}px)`"
+          class="h-6 w-6 flex items-center justify-center rounded transition-colors"
+          :class="bpStore.activeId === bp.id
+            ? 'bg-primary text-primary-foreground'
+            : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'"
+          @click="bpStore.activeId = bp.id"
+        >
+          <component :is="BP_ICONS[bp.id]" class="size-3.5" />
+        </button>
+      </div>
+      <span class="text-xs text-muted-foreground font-mono shrink-0">
+        {{ bpStore.active.canvasWidth }}px
+      </span>
 
       <!-- Zoom selector -->
       <Select v-model="zoom">
@@ -263,7 +296,10 @@ onUnmounted(() => window.removeEventListener('keydown', onKeyDown))
               marginBottom: scaledMarginBottom,
             }"
           >
-            <div class="bg-white shadow-2xl rounded-lg min-w-[360px] min-h-[200px]">
+            <div
+              class="bg-white shadow-2xl rounded-lg min-h-[200px]"
+              :style="{ width: bpStore.active.canvasWidth + 'px' }"
+            >
               <WidgetCanvas />
             </div>
           </div>

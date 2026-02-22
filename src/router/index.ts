@@ -68,6 +68,11 @@ const router = createRouter({
       name: 'project-colors',
       component: () => import('@/views/projects/ProjectColorsView.vue'),
     },
+    {
+      path: '/projects/:id/breakpoints',
+      name: 'project-breakpoints',
+      component: () => import('@/views/projects/ProjectBreakpointsView.vue'),
+    },
   ],
 })
 

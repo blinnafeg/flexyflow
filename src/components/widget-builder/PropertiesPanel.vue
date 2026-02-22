@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { Layers } from 'lucide-vue-next'
 import { useWidgetBuilderStore } from '@/stores/widget-builder.store'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -15,22 +16,34 @@ import ListViewConfigPanel  from './ListViewConfigPanel.vue'
 import DataBindingPanel    from './DataBindingPanel.vue'
 import NodeActionsPanel    from './NodeActionsPanel.vue'
 import WidgetRefConfigPanel from './WidgetRefConfigPanel.vue'
+import ResponsiveSection   from './properties/ResponsiveSection.vue'
 
 const store = useWidgetBuilderStore()
 const node = computed(() => store.selectedNode)
 
 const isListViewNode  = computed(() => node.value?.type === 'ListView')
 const isWidgetRefNode = computed(() => node.value?.type === 'WidgetRef')
-const isFlexContainer = computed(() =>
-  node.value && ['Column', 'Row', 'Container'].includes(node.value.type)
-)
-const hasTypography = computed(() =>
-  node.value && ['Text', 'Button', 'TextField', 'RichText'].includes(node.value.type)
-)
+
+const isFlexContainer = computed(() => {
+  if (store.isMultiSelect)
+    return store.selectedNodes.every(n => ['Column', 'Row', 'Container'].includes(n.type))
+  return node.value ? ['Column', 'Row', 'Container'].includes(node.value.type) : false
+})
+
+const hasTypography = computed(() => {
+  if (store.isMultiSelect)
+    return store.selectedNodes.every(n => ['Text', 'Button', 'TextField', 'RichText'].includes(n.type))
+  return node.value ? ['Text', 'Button', 'TextField', 'RichText'].includes(node.value.type) : false
+})
+
 const hasContent = computed(() =>
-  node.value && ['Text', 'Button', 'TextField', 'RichText', 'Icon'].includes(node.value.type)
+  !store.isMultiSelect &&
+  node.value !== null &&
+  ['Text', 'Button', 'TextField', 'RichText', 'Icon'].includes(node.value?.type ?? '')
 )
+
 const showDataSection = computed(() =>
+  !store.isMultiSelect &&
   store.widgetKind === 'list-item' &&
   node.value !== null &&
   ['Text', 'Button', 'TextField'].includes(node.value?.type ?? '')
@@ -45,20 +58,29 @@ const showDataSection = computed(() =>
     </div>
 
     <template v-else>
-      <!-- Node header -->
-      <div class="px-3 py-2.5 border-b shrink-0">
+      <!-- Multi-select banner -->
+      <div
+        v-if="store.isMultiSelect"
+        class="px-3 py-2 bg-blue-500/10 border-b text-xs text-blue-600 dark:text-blue-400 flex items-center gap-1.5 shrink-0"
+      >
+        <Layers class="size-3.5 shrink-0" />
+        {{ store.selectedIds.size }} элемента выбрано — изменения применятся ко всем
+      </div>
+
+      <!-- Single-node header -->
+      <div v-if="!store.isMultiSelect" class="px-3 py-2.5 border-b shrink-0">
         <div class="flex items-center gap-2">
           <Badge variant="outline" class="text-xs shrink-0 font-mono">{{ node.type }}</Badge>
           <Input
             :model-value="node.name"
             class="h-7 text-xs"
-            @update:model-value="store.renameNode(node.id, $event)"
+            @update:model-value="store.renameNode(node.id, String($event))"
           />
         </div>
       </div>
 
-      <!-- ListView node: full-panel config -->
-      <template v-if="isListViewNode">
+      <!-- ListView node: full-panel config (single select only) -->
+      <template v-if="isListViewNode && !store.isMultiSelect">
         <div class="px-3 py-2 border-b shrink-0 flex items-center gap-2">
           <p class="text-[11px] font-semibold uppercase text-muted-foreground tracking-wider flex-1">
             Настройки ListView
@@ -68,8 +90,8 @@ const showDataSection = computed(() =>
         <ListViewConfigPanel />
       </template>
 
-      <!-- WidgetRef node: slot config -->
-      <template v-else-if="isWidgetRefNode">
+      <!-- WidgetRef node: slot config (single select only) -->
+      <template v-else-if="isWidgetRefNode && !store.isMultiSelect">
         <div class="px-3 py-2 border-b shrink-0 flex items-center gap-2">
           <p class="text-[11px] font-semibold uppercase text-muted-foreground tracking-wider flex-1">
             Встроенный виджет
@@ -79,8 +101,12 @@ const showDataSection = computed(() =>
         <WidgetRefConfigPanel />
       </template>
 
-      <!-- Regular node: collapsible sections -->
+      <!-- Regular node sections (always for multi-select; for regular nodes otherwise) -->
       <div v-else class="flex-1 overflow-y-auto">
+        <PropertySection v-if="!store.isMultiSelect" label="Responsive" :default-open="true">
+          <ResponsiveSection />
+        </PropertySection>
+
         <PropertySection label="Размер" :default-open="true">
           <SizeSection />
         </PropertySection>
@@ -113,7 +139,7 @@ const showDataSection = computed(() =>
           <DataBindingPanel />
         </PropertySection>
 
-        <PropertySection label="Действия" :default-open="false">
+        <PropertySection v-if="!store.isMultiSelect" label="Действия" :default-open="false">
           <NodeActionsPanel />
         </PropertySection>
       </div>

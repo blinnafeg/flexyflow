@@ -1,4 +1,5 @@
 import type { PaletteColor } from './palette'
+import type { BreakpointId } from './breakpoints'
 
 export interface Project {
   id: string
@@ -17,6 +18,7 @@ export interface Page {
   name: string
   slug: string
   layoutId?: string
+  responsiveLayouts?: Partial<Record<BreakpointId, string>>
   content: Record<string, { widgetId: string; order: number }[]>
   slotSettings: Record<string, { orientation: 'row' | 'column'; backgroundColor?: string }>
   isPublished: boolean
