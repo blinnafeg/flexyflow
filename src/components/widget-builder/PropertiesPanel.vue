@@ -1,25 +1,26 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useWidgetBuilderStore } from '@/stores/widget-builder.store'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Input } from '@/components/ui/input'
-import { Separator } from '@/components/ui/separator'
 import { Badge } from '@/components/ui/badge'
-import SizeSection        from './properties/SizeSection.vue'
-import SpacingSection     from './properties/SpacingSection.vue'
-import BorderSection      from './properties/BorderSection.vue'
-import ColorsSection      from './properties/ColorsSection.vue'
-import TypographySection  from './properties/TypographySection.vue'
-import FlexSection        from './properties/FlexSection.vue'
-import ContentSection     from './properties/ContentSection.vue'
-import ListViewConfigPanel from './ListViewConfigPanel.vue'
-import DataBindingPanel   from './DataBindingPanel.vue'
-import NodeActionsPanel   from './NodeActionsPanel.vue'
+import PropertySection     from './PropertySection.vue'
+import SizeSection         from './properties/SizeSection.vue'
+import SpacingSection      from './properties/SpacingSection.vue'
+import BorderSection       from './properties/BorderSection.vue'
+import ColorsSection       from './properties/ColorsSection.vue'
+import TypographySection   from './properties/TypographySection.vue'
+import FlexSection         from './properties/FlexSection.vue'
+import ContentSection      from './properties/ContentSection.vue'
+import ListViewConfigPanel  from './ListViewConfigPanel.vue'
+import DataBindingPanel    from './DataBindingPanel.vue'
+import NodeActionsPanel    from './NodeActionsPanel.vue'
+import WidgetRefConfigPanel from './WidgetRefConfigPanel.vue'
 
 const store = useWidgetBuilderStore()
 const node = computed(() => store.selectedNode)
 
-const isListViewNode = computed(() => node.value?.type === 'ListView')
+const isListViewNode  = computed(() => node.value?.type === 'ListView')
+const isWidgetRefNode = computed(() => node.value?.type === 'WidgetRef')
 const isFlexContainer = computed(() =>
   node.value && ['Column', 'Row', 'Container'].includes(node.value.type)
 )
@@ -29,8 +30,7 @@ const hasTypography = computed(() =>
 const hasContent = computed(() =>
   node.value && ['Text', 'Button', 'TextField', 'RichText', 'Icon'].includes(node.value.type)
 )
-// Show "Data" tab only for list-item widgets on bindable node types
-const showDataTab = computed(() =>
+const showDataSection = computed(() =>
   store.widgetKind === 'list-item' &&
   node.value !== null &&
   ['Text', 'Button', 'TextField'].includes(node.value?.type ?? '')
@@ -46,9 +46,9 @@ const showDataTab = computed(() =>
 
     <template v-else>
       <!-- Node header -->
-      <div class="px-3 py-2.5 border-b shrink-0 space-y-2">
+      <div class="px-3 py-2.5 border-b shrink-0">
         <div class="flex items-center gap-2">
-          <Badge variant="outline" class="text-xs shrink-0">{{ node.type }}</Badge>
+          <Badge variant="outline" class="text-xs shrink-0 font-mono">{{ node.type }}</Badge>
           <Input
             :model-value="node.name"
             class="h-7 text-xs"
@@ -57,7 +57,7 @@ const showDataTab = computed(() =>
         </div>
       </div>
 
-      <!-- ListView node: show full-panel config instead of regular tabs -->
+      <!-- ListView node: full-panel config -->
       <template v-if="isListViewNode">
         <div class="px-3 py-2 border-b shrink-0 flex items-center gap-2">
           <p class="text-[11px] font-semibold uppercase text-muted-foreground tracking-wider flex-1">
@@ -68,59 +68,55 @@ const showDataTab = computed(() =>
         <ListViewConfigPanel />
       </template>
 
-      <!-- Regular node: tabs -->
-      <Tabs v-else default-value="layout" class="flex-1 flex flex-col overflow-hidden">
-        <TabsList class="mx-3 mt-2 shrink-0 h-8">
-          <TabsTrigger value="layout" class="text-xs">Layout</TabsTrigger>
-          <TabsTrigger value="style" class="text-xs">Style</TabsTrigger>
-          <TabsTrigger v-if="hasContent" value="content" class="text-xs">Content</TabsTrigger>
-          <TabsTrigger v-if="showDataTab" value="data" class="text-xs text-blue-500">Data</TabsTrigger>
-          <TabsTrigger value="actions" class="text-xs">Actions</TabsTrigger>
-        </TabsList>
+      <!-- WidgetRef node: slot config -->
+      <template v-else-if="isWidgetRefNode">
+        <div class="px-3 py-2 border-b shrink-0 flex items-center gap-2">
+          <p class="text-[11px] font-semibold uppercase text-muted-foreground tracking-wider flex-1">
+            Встроенный виджет
+          </p>
+          <Badge variant="secondary" class="text-[10px] text-violet-500">ref</Badge>
+        </div>
+        <WidgetRefConfigPanel />
+      </template>
 
-        <!-- Layout tab -->
-        <TabsContent value="layout" class="flex-1 overflow-y-auto mt-0">
-          <div class="p-3 space-y-4">
-            <SizeSection />
-            <Separator />
-            <SpacingSection />
-            <template v-if="isFlexContainer">
-              <Separator />
-              <FlexSection />
-            </template>
-          </div>
-        </TabsContent>
+      <!-- Regular node: collapsible sections -->
+      <div v-else class="flex-1 overflow-y-auto">
+        <PropertySection label="Размер" :default-open="true">
+          <SizeSection />
+        </PropertySection>
 
-        <!-- Style tab -->
-        <TabsContent value="style" class="flex-1 overflow-y-auto mt-0">
-          <div class="p-3 space-y-4">
-            <ColorsSection />
-            <Separator />
-            <BorderSection />
-            <template v-if="hasTypography">
-              <Separator />
-              <TypographySection />
-            </template>
-          </div>
-        </TabsContent>
+        <PropertySection label="Отступы">
+          <SpacingSection />
+        </PropertySection>
 
-        <!-- Content tab -->
-        <TabsContent v-if="hasContent" value="content" class="flex-1 overflow-y-auto mt-0">
-          <div class="p-3">
-            <ContentSection />
-          </div>
-        </TabsContent>
+        <PropertySection v-if="isFlexContainer" label="Расположение (Flex)" :default-open="true">
+          <FlexSection />
+        </PropertySection>
 
-        <!-- Data binding tab (list-item widgets only) -->
-        <TabsContent v-if="showDataTab" value="data" class="flex-1 overflow-y-auto mt-0">
+        <PropertySection label="Цвета" :default-open="true">
+          <ColorsSection />
+        </PropertySection>
+
+        <PropertySection label="Граница">
+          <BorderSection />
+        </PropertySection>
+
+        <PropertySection v-if="hasTypography" label="Типография">
+          <TypographySection />
+        </PropertySection>
+
+        <PropertySection v-if="hasContent" label="Контент" :default-open="true">
+          <ContentSection />
+        </PropertySection>
+
+        <PropertySection v-if="showDataSection" label="Данные" :default-open="true">
           <DataBindingPanel />
-        </TabsContent>
+        </PropertySection>
 
-        <!-- Actions tab -->
-        <TabsContent value="actions" class="flex-1 overflow-y-auto mt-0">
+        <PropertySection label="Действия" :default-open="false">
           <NodeActionsPanel />
-        </TabsContent>
-      </Tabs>
+        </PropertySection>
+      </div>
     </template>
   </div>
 </template>

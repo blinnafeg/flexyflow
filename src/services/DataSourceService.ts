@@ -36,12 +36,44 @@ export class DataSourceService {
   }
 
   /**
-   * Infer columns by fetching a sample row from the table.
-   * Works with anon key as long as the table is readable (no RLS blocking).
+   * Retrieve column definitions for a table.
+   *
+   * Strategy:
+   * 1. Parse the Supabase OpenAPI spec (/rest/v1/) — reliable even for empty tables.
+   * 2. Fall back to fetching a sample row and inferring types from values.
    */
   async getColumns(tableName: string): Promise<ColumnInfo[]> {
     if (!tableName.trim()) return []
 
+    // 1. OpenAPI spec approach (works for empty tables too)
+    if (this.creds) {
+      try {
+        const res = await fetch(`${this.creds.url}/rest/v1/`, {
+          headers: {
+            apikey: this.creds.anonKey,
+            Authorization: `Bearer ${this.creds.anonKey}`,
+          },
+        })
+        if (res.ok) {
+          const spec = await res.json() as {
+            definitions?: Record<string, {
+              properties?: Record<string, { type?: string; format?: string }>
+            }>
+          }
+          const props = spec.definitions?.[tableName]?.properties
+          if (props) {
+            return Object.entries(props).map(([name, prop]) => ({
+              name,
+              type: prop.format ?? prop.type ?? 'text',
+            }))
+          }
+        }
+      } catch {
+        // Fall through to sample-row approach
+      }
+    }
+
+    // 2. Sample row fallback
     const { data, error } = await this.client
       .from(tableName)
       .select('*')

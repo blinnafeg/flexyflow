@@ -2,6 +2,7 @@
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useWidgetBuilderStore } from '@/stores/widget-builder.store'
+import { usePaletteStore } from '@/stores/palette.store'
 import WidgetTreePanel from '@/components/widget-builder/WidgetTreePanel.vue'
 import WidgetCanvas   from '@/components/widget-builder/WidgetCanvas.vue'
 import PropertiesPanel from '@/components/widget-builder/PropertiesPanel.vue'
@@ -13,9 +14,10 @@ import {
 import { ArrowLeft, Save, Loader2, Ruler, List } from 'lucide-vue-next'
 import { toast } from 'vue-sonner'
 
-const route  = useRoute()
-const router = useRouter()
-const store  = useWidgetBuilderStore()
+const route   = useRoute()
+const router  = useRouter()
+const store   = useWidgetBuilderStore()
+const palette = usePaletteStore()
 
 const widgetId = route.params.id as string
 const loading  = ref(true)
@@ -94,6 +96,9 @@ watch(canvasBox, el => {
 onMounted(async () => {
   try {
     await store.load(widgetId)
+    if (store.widget?.projectId) {
+      palette.load(store.widget.projectId)
+    }
   } catch (e: unknown) {
     toast.error((e as Error).message)
   } finally {

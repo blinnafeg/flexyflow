@@ -1,14 +1,15 @@
 <script setup lang="ts">
-import { ref, computed, provide, reactive, watch } from 'vue'
+import { ref, computed, provide, reactive, watch, onMounted } from 'vue'
 import { useWidgetBuilderStore } from '@/stores/widget-builder.store'
 import { canHaveChildren } from '@/composables/useWidgetTree'
 import type { WidgetNode, WidgetType } from '@/types/widget-builder'
 import { Input } from '@/components/ui/input'
 import {
   Rows3, Columns3, Square, Type, MousePointerClick,
-  FormInput, Pilcrow, List, Star,
+  FormInput, Pilcrow, List, Star, Blocks,
   ChevronsDownUp, ChevronsUpDown, Search, X,
 } from 'lucide-vue-next'
+import { supabase } from '@/lib/supabase'
 import TreeNode from './TreeNode.vue'
 
 const store = useWidgetBuilderStore()
@@ -61,6 +62,19 @@ provide('dragState', dragState)
 provide('onToggle', toggleCollapse)
 provide('searchQuery', searchQuery)
 
+// ── Project widgets list (for WidgetRef) ──────────────────────────────────────
+const projectWidgets = ref<{ id: string; name: string }[]>([])
+
+onMounted(async () => {
+  if (!store.widget?.projectId) return
+  const { data } = await supabase
+    .from('ff_widgets')
+    .select('id, name')
+    .eq('project_id', store.widget.projectId)
+    .order('name')
+  projectWidgets.value = (data ?? []).filter(w => w.id !== store.widget?.id)
+})
+
 // ── Palette ───────────────────────────────────────────────────────────────────
 const ICONS: Record<WidgetType, unknown> = {
   Column:    Rows3,
@@ -72,6 +86,7 @@ const ICONS: Record<WidgetType, unknown> = {
   RichText:  Pilcrow,
   ListView:  List,
   Icon:      Star,
+  WidgetRef: Blocks,
 }
 
 const PALETTE: { type: WidgetType; label: string }[] = [
@@ -107,6 +122,19 @@ function addWidget(type: WidgetType) {
     if (newId) store.select(newId)
   }
 }
+
+function addWidgetRef(widgetId: string, widgetName: string) {
+  const targetId = store.selectedId ?? store.widget?.root.id
+  if (!targetId) return
+  const targetNode = store.widget ? findNodeById(store.widget.root, targetId) : null
+  if (targetNode && canHaveChildren(targetNode.type)) {
+    const newId = store.addWidgetRefAsChild(targetId, widgetId, widgetName)
+    if (newId) store.select(newId)
+  } else {
+    const newId = store.addWidgetRefAsSibling(targetId, widgetId, widgetName)
+    if (newId) store.select(newId)
+  }
+}
 </script>
 
 <template>
@@ -125,6 +153,24 @@ function addWidget(type: WidgetType) {
           {{ w.label }}
         </button>
       </div>
+
+      <!-- Project widgets list -->
+      <template v-if="projectWidgets.length > 0">
+        <p class="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-1 mt-3 mb-1.5">
+          Мои виджеты
+        </p>
+        <div class="grid grid-cols-2 gap-1">
+          <button
+            v-for="w in projectWidgets"
+            :key="w.id"
+            class="flex items-center gap-1.5 px-2 py-1.5 rounded text-xs hover:bg-accent text-left transition-colors text-violet-600 dark:text-violet-400"
+            @click="addWidgetRef(w.id, w.name)"
+          >
+            <Blocks class="size-3 shrink-0" />
+            <span class="truncate">{{ w.name }}</span>
+          </button>
+        </div>
+      </template>
     </div>
 
     <!-- Tree header -->

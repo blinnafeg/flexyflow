@@ -1,4 +1,4 @@
-export type WidgetType = 'Column' | 'Row' | 'Container' | 'Text' | 'Button' | 'TextField' | 'RichText' | 'ListView' | 'Icon'
+export type WidgetType = 'Column' | 'Row' | 'Container' | 'Text' | 'Button' | 'TextField' | 'RichText' | 'ListView' | 'Icon' | 'WidgetRef'
 
 export type SizeUnit = 'px' | '%' | 'auto'
 
@@ -105,6 +105,11 @@ export interface WidgetNodeProps {
   iconSize?: number         // px, e.g. 24
   iconColor?: string        // hex/css, '' = inherit currentColor from CSS
   iconStrokeWidth?: number  // Lucide stroke-width, default 2
+
+  // WidgetRef / Slot-specific (only for nodes of type 'WidgetRef')
+  widgetRefId?: string                           // legacy single-ref (backward compat)
+  widgetRefIds?: { id: string; name: string }[]  // multi-widget slot items
+  slotOrientation?: 'row' | 'column'             // flex direction for slot render
 }
 
 export interface WidgetNode {

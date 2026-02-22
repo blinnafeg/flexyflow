@@ -63,6 +63,11 @@ const router = createRouter({
       name: 'widget-editor',
       component: () => import('@/views/widgets/WidgetEditorView.vue'),
     },
+    {
+      path: '/projects/:id/colors',
+      name: 'project-colors',
+      component: () => import('@/views/projects/ProjectColorsView.vue'),
+    },
   ],
 })
 

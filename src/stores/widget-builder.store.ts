@@ -219,6 +219,38 @@ export const useWidgetBuilderStore = defineStore('widgetBuilder', () => {
     return child.id
   }
 
+  // Creates a WidgetRef/Slot node with initial widgetRefIds set before insertion
+  function addWidgetRefAsChild(parentId: string, widgetRefId: string, name: string): string | null {
+    const parent = index.value.get(parentId)
+    if (!parent || !canHaveChildren(parent.type)) return null
+    const child = createDefaultNode('WidgetRef')
+    child.props.widgetRefIds = [{ id: widgetRefId, name }]
+    child.name = name
+    parent.children.push(child)
+    isDirty.value = true
+    return child.id
+  }
+
+  function addWidgetRefAsSibling(siblingId: string, widgetRefId: string, name: string): string | null {
+    if (!widget.value) return null
+    const parent = findParent(widget.value.root, siblingId)
+    if (!parent) return null
+    const idx = parent.children.findIndex(c => c.id === siblingId)
+    const child = createDefaultNode('WidgetRef')
+    child.props.widgetRefIds = [{ id: widgetRefId, name }]
+    child.name = name
+    parent.children.splice(idx + 1, 0, child)
+    isDirty.value = true
+    return child.id
+  }
+
+  function updateSlotItems(nodeId: string, items: { id: string; name: string }[]) {
+    const node = index.value.get(nodeId)
+    if (!node) return
+    node.props.widgetRefIds = items
+    isDirty.value = true
+  }
+
   function deleteNode(id: string) {
     if (!widget.value || id === widget.value.root.id) return
     removeNode(widget.value.root, id)
@@ -353,7 +385,8 @@ export const useWidgetBuilderStore = defineStore('widgetBuilder', () => {
     load, save, select, $reset,
     updateProps, renameNode,
     setWidgetKind, updateListItemMeta, setDataBinding, removeDataBinding,
-    addChild, addSibling, deleteNode, moveUp, moveDown, wrapInColumn,
+    addChild, addSibling, addWidgetRefAsChild, addWidgetRefAsSibling, updateSlotItems,
+    deleteNode, moveUp, moveDown, wrapInColumn,
     wrapIn, duplicateNode, moveNode,
     toggleNodeVisibility, toggleNodeLock,
     updateNodeActions,

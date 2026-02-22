@@ -3,7 +3,7 @@ import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useProjectsStore } from '@/stores/projects.store'
 import { Card, CardContent } from '@/components/ui/card'
-import { LayoutGrid, FileText, Puzzle, Zap, ArrowRight, Database } from 'lucide-vue-next'
+import { LayoutGrid, FileText, Puzzle, Zap, ArrowRight, Database, Palette } from 'lucide-vue-next'
 import DatabasePanel from '@/components/projects/DatabasePanel.vue'
 
 const route = useRoute()
@@ -91,6 +91,22 @@ onMounted(async () => {
             <div>
               <p class="font-semibold">Воркфлоу</p>
               <p class="text-sm text-muted-foreground">Действия и триггеры</p>
+            </div>
+          </div>
+          <ArrowRight class="size-4 text-muted-foreground" />
+        </CardContent>
+      </Card>
+
+      <!-- Colors -->
+      <Card class="cursor-pointer hover:bg-accent/30 transition-colors" @click="router.push(`/projects/${projectId}/colors`)">
+        <CardContent class="pt-5 flex items-center justify-between">
+          <div class="flex items-center gap-3">
+            <div class="size-10 rounded-lg bg-pink-500/10 flex items-center justify-center">
+              <Palette class="size-5 text-pink-500" />
+            </div>
+            <div>
+              <p class="font-semibold">Цвета</p>
+              <p class="text-sm text-muted-foreground">Палитра проекта</p>
             </div>
           </div>
           <ArrowRight class="size-4 text-muted-foreground" />

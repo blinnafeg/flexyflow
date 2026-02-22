@@ -209,6 +209,7 @@ export const useProjectsStore = defineStore('projects', () => {
       slug: row.slug as string,
       layoutId: row.layout_id as string | undefined,
       content: (row.content as Record<string, { widgetId: string; order: number }[]>) ?? {},
+      slotSettings: {},
       isPublished: (row.is_published as boolean) ?? false,
       createdAt: row.created_at as string,
       updatedAt: row.updated_at as string,

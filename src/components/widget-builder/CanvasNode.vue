@@ -5,6 +5,7 @@ import { nodeToStyle } from '@/composables/useWidgetCss'
 import { loadGoogleFont } from '@/composables/useGoogleFonts'
 import { useWidgetBuilderStore } from '@/stores/widget-builder.store'
 import { resolveIcon } from '@/registry/icon-packages'
+import { Badge } from '@/components/ui/badge'
 
 const props = defineProps<{
   node: WidgetNode
@@ -21,6 +22,13 @@ const resolvedIcon = computed(() =>
     ? resolveIcon(props.node.props.iconPackage, props.node.props.iconName)
     : null
 )
+
+const slotItems = computed(() => {
+  const p = props.node.props
+  if (p.widgetRefIds?.length) return p.widgetRefIds
+  if (p.widgetRefId) return [{ id: p.widgetRefId, name: props.node.name }]
+  return []
+})
 
 function onClick(e: MouseEvent) {
   if (!props.editorMode) return
@@ -133,6 +141,33 @@ function spanStyle(span: RichTextSpan): Record<string, string> {
       v-else
       class="text-xs text-muted-foreground font-mono border border-dashed border-gray-300 rounded px-1.5 py-0.5 select-none"
     >icon</span>
+  </div>
+
+  <!-- WidgetRef / Slot — editor placeholder -->
+  <div
+    v-else-if="node.type === 'WidgetRef'"
+    :style="{ width: nodeStyle.width, padding: nodeStyle.padding, margin: nodeStyle.margin }"
+    :class="[
+      'flex flex-col items-center justify-center gap-1.5 rounded-md border-2 border-dashed min-h-[48px] select-none cursor-pointer transition-colors p-2',
+      isSelected
+        ? 'border-violet-500 bg-violet-500/5'
+        : 'border-violet-300/60 bg-violet-50/30 hover:bg-violet-50/60 dark:bg-violet-900/10',
+      editorOverlayClass,
+    ]"
+    @click="onClick"
+  >
+    <div class="text-[11px] font-semibold text-violet-500">Slot</div>
+    <div v-if="slotItems.length === 0" class="text-[10px] text-muted-foreground/60 italic">Не настроен</div>
+    <div v-else class="flex flex-wrap gap-1 justify-center max-w-[160px]">
+      <Badge
+        v-for="w in slotItems"
+        :key="w.id"
+        variant="secondary"
+        class="text-[9px] px-1.5 py-0 text-violet-600 bg-violet-100 dark:bg-violet-900/30"
+      >
+        {{ w.name }}
+      </Badge>
+    </div>
   </div>
 
   <!-- ListView — editor placeholder showing config summary -->

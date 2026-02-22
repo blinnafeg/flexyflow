@@ -60,12 +60,16 @@ src/
 │   │   └── ActionStep.vue     # Карточка одного шага с конфиг-формой
 │   ├── layout/
 │   │   └── GridBuilder.vue    # Визуальный редактор CSS-сетки
+│   ├── color-picker/
+│   │   └── ColorPickerInput.vue   # Переиспользуемый пикер цвета: swatch + hex input + палитра проекта (swatches)
 │   ├── widget-builder/
 │   │   ├── CanvasNode.vue         # Рекурсивный рендерер ноды (ТОЛЬКО для editor mode) + ListView/Icon placeholder
 │   │   ├── WidgetCanvas.vue       # Canvas обёртка с click-to-deselect
 │   │   ├── WidgetTreePanel.vue    # Левая панель: палитра + дерево + секция «Данные» для list-item
-│   │   ├── PropertiesPanel.vue    # Правая панель: Layout|Style|Content|Data|Actions; для ListView — конфиг
-│   │   ├── NodeActionsPanel.vue   # Вкладка «Actions» в PropertiesPanel: триггеры + шаги действий inline на ноде
+│   │   ├── PropertiesPanel.vue    # Правая панель: один скролл с PropertySection секциями (без табов)
+│   │   ├── PropertySection.vue    # Сворачиваемая секция с шевроном (аналог Actions-стиля)
+│   │   ├── NodeActionsPanel.vue   # Секция «Действия»: триггеры + шаги действий inline на ноде
+│   │   ├── WidgetRefConfigPanel.vue # Конфигурация WidgetRef (Slot): ориентация, DnD список виджетов, добавление
 │   │   ├── ElementPicker.vue      # Пикер элементов: текущий виджет + другие виджеты проекта; Teleport + fixed pos
 │   │   ├── ListViewConfigPanel.vue # Конфигурация ListView ноды: источник, фильтры, сортировка, пагинация
 │   │   ├── DataBindingPanel.vue   # Привязка полей данных к элементам виджета (для list-item режима)
@@ -73,12 +77,13 @@ src/
 │   │   └── properties/
 │   │       ├── SizeSection.vue
 │   │       ├── SpacingSection.vue
-│   │       ├── BorderSection.vue
-│   │       ├── ColorsSection.vue
+│   │       ├── BorderSection.vue  # Использует ColorPickerInput для цвета границы
+│   │       ├── ColorsSection.vue  # Использует ColorPickerInput для фона и цвета текста
 │   │       ├── TypographySection.vue
 │   │       ├── FlexSection.vue
 │   │       ├── ContentSection.vue
-│   │       └── IconSection.vue    # Свойства Icon: пикер, размер, толщина, цвет
+│   │       ├── RichTextSection.vue # Использует ColorPickerInput для цвета span
+│   │       └── IconSection.vue    # Свойства Icon: пикер, размер, толщина, цвет (ColorPickerInput)
 │   ├── widgets/
 │   │   ├── PreviewNode.vue        # Рекурсивный рендерер для публичного просмотра (runtime, без editor режима)
 │   │   │                          # Для ListView: загружает данные из Supabase, применяет dataBindings, рендерит строки
@@ -110,6 +115,7 @@ src/
 │   └── WorkflowService.ts     # Supabase CRUD + executeWorkflow()
 ├── stores/
 │   ├── builder.store.ts       # Текущий воркфлоу, выбранный слот/виджет, preview mode
+│   ├── palette.store.ts       # Палитра цветов проекта: load/save из ff_projects.color_palette (JSONB)
 │   ├── projects.store.ts      # CRUD: проекты, страницы, макеты
 │   ├── visibility.store.ts    # Pinia-обёртка над VisibilityService
 │   ├── widget-builder.store.ts # Редактор виджетов: flat Map index, O(1) доступ
@@ -117,16 +123,18 @@ src/
 ├── types/
 │   ├── actions.ts             # TriggerType, ActionType, ActionStep, Workflow, ...
 │   ├── layouts.ts             # GridSlot, LayoutConfig, Layout
-│   ├── projects.ts            # Project, Page
+│   ├── palette.ts             # PaletteColor, ColorGroup, DEFAULT_PALETTE, COLOR_GROUP_LABELS
+│   ├── projects.ts            # Project, Page (+ palette, slotSettings)
 │   ├── list-view.ts           # ListViewConfig, ListItemMeta, DataBinding, WidgetKind, ColumnInfo, ...
-│   ├── widget-builder.ts      # WidgetNode, WidgetType (+ ListView), WidgetNodeProps (+ listViewConfig), ...
+│   ├── widget-builder.ts      # WidgetNode, WidgetType (+ ListView), WidgetNodeProps (+ widgetRefIds, slotOrientation), ...
 │   ├── widgets.ts             # WidgetElement, Widget, WidgetAssignment
-│   └── index.ts               # re-exports всех типов
+│   └── index.ts               # re-exports всех типов (включая palette)
 ├── views/
 │   ├── dashboard/DashboardView.vue
 │   ├── projects/
 │   │   ├── ProjectsView.vue       # Список проектов + создание
-│   │   └── ProjectDetailView.vue  # Карточки: Макеты, Страницы, Виджеты, Воркфлоу
+│   │   ├── ProjectDetailView.vue  # Карточки: Макеты, Страницы, Виджеты, Воркфлоу, БД, Цвета
+│   │   └── ProjectColorsView.vue  # Управление палитрой цветов проекта (FlutterFlow-style)
 │   ├── layouts/
 │   │   ├── LayoutsView.vue        # Список макетов проекта
 │   │   └── LayoutEditorView.vue   # Редактор сетки (использует GridBuilder)
@@ -152,7 +160,7 @@ src/
 
 | Таблица | Назначение | Ключевые поля |
 |---|---|---|
-| `ff_projects` | Проекты | id, name, description |
+| `ff_projects` | Проекты | id, name, description, supabase_url, supabase_anon_key, color_palette (jsonb) |
 | `ff_layouts` | Макеты страниц | id, project_id, name, config (jsonb), slots (jsonb) |
 | `ff_pages` | Страницы | id, project_id, name, slug, layout_id, content (jsonb), is_published |
 | `ff_widgets` | Виджеты | id, project_id, name, elements (jsonb) |
@@ -181,8 +189,21 @@ src/
 
 **`ff_pages.content`:**
 ```json
-{ "header": [{ "widgetId": "uuid", "order": 0 }] }
+{
+  "header": [{ "widgetId": "uuid", "order": 0 }],
+  "_settings": {
+    "header": { "orientation": "row", "backgroundColor": "#ffffff" }
+  }
+}
 ```
+Ключ `_settings` — служебный объект; остальные ключи — имена слотов.
+Каждый слот хранит массив `[{ widgetId, order }]`. `_settings[slotName]` — настройки слота (orientation, backgroundColor).
+
+**`ff_projects.color_palette`:**
+```json
+[{ "id": "uuid", "name": "Primary", "group": "brand", "light": "#2563eb", "dark": "#3b82f6" }]
+```
+> **SQL-миграция обязательна:** `ALTER TABLE ff_projects ADD COLUMN IF NOT EXISTS color_palette jsonb;`
 
 **`ff_workflows.steps`:**
 ```json
@@ -214,6 +235,7 @@ src/
 | `/workflows/:id` | WorkflowEditorView | Редактор воркфлоу |
 | `/projects/:id/widgets` | WidgetsView | Список виджетов проекта |
 | `/widgets/:id/edit` | WidgetEditorView | Редактор виджета (FlutterFlow-style) |
+| `/projects/:id/colors` | ProjectColorsView | Управление палитрой цветов проекта |
 
 ---
 
@@ -324,6 +346,7 @@ Crosshair линии в редакторе виджетов используют
 - `builder.store.ts` — UI-состояние редактора (не персистируется)
 - `visibility.store.ts` — видимость элементов на странице
 - `widget-builder.store.ts` — состояние редактора виджетов
+- `palette.store.ts` — палитра цветов проекта; вызывать `palette.load(projectId)` в `onMounted` любого редактора с выбором цвета
 
 Всегда использовать stores для данных, а не локальные ref() с fetch.
 Исключение: разовые загрузки внутри view (например, загрузка конкретного макета в LayoutEditorView).
@@ -432,6 +455,23 @@ const projectIdRef = inject<ComputedRef<string> | Ref<string>>('projectId', ref(
 - **Межвиджетная видимость** — кнопка в Widget A может скрывать элемент в Widget B или весь Widget B (`w:WIDGET_ID`); `WidgetRenderer.vue` проверяет видимость всего виджета
 - **ElementPicker** — выпадающий пикер с `<Teleport to="body">`: текущий виджет + список других виджетов проекта (lazy-загрузка нод); позиционируется через `getBoundingClientRect()`; тематический скроллбар через CSS-переменные shadcn
 
+### Готово и работает ✅ (слоты страницы + палитра цветов)
+- **Множественные виджеты в слоте страницы** — `PageEditorView.vue`: каждый слот принимает N виджетов; список с drag-and-drop переупорядочиванием, кнопки удаления, Select + «Добавить»; сохраняется в `ff_pages.content` как `[{ widgetId, order }]`
+- **Ориентация слота** (row/column) — inline кнопки ↔/↕ для flex-направления; сохраняется в `_settings[slot].orientation`
+- **Фон слота** — `ColorPickerInput` для выбора/сброса цвета фона; сохраняется в `_settings[slot].backgroundColor`
+- **PagePreviewView** обновлён: рендерит все виджеты слота через `<WidgetRenderer>` с flex-контейнером нужного направления + фоновым цветом
+- **Палитра цветов проекта** (`src/stores/palette.store.ts`) — FlutterFlow-style: 4 группы (Brand, Accent, Semantic, Neutral), light/dark варианты; загрузка/сохранение в `ff_projects.color_palette` (JSONB)
+- **`DEFAULT_PALETTE`** — 13 предустановленных цветов из `src/types/palette.ts` (с осмысленными light/dark вариантами)
+- **`ColorPickerInput.vue`** (`src/components/color-picker/`) — унифицированный пикер: цветной swatch (нативный `<input type="color">`), hex-инпут, кнопка очистки, разворачиваемая палитра проекта с группировкой и light/dark переключателем; без Popover (inline expand)
+- **ProjectColorsView** (`/projects/:id/colors`) — страница управления палитрой: карточки с split light/dark превью (80px), inline-редактор (имя, hex-light, hex-dark), удаление, сброс к DEFAULT_PALETTE, миграционный баннер с SQL
+- **Карточка «Цвета»** в ProjectDetailView — ссылка на ProjectColorsView
+- **Интеграция** ColorPickerInput во все редакторы: ColorsSection, BorderSection, IconSection, RichTextSection, PageEditorView (фон слота)
+- **`PropertiesPanel.vue` редизайн** — убраны табы, единый скролл с `<PropertySection>` (сворачиваемые секции): Размер, Отступы, Расположение (Flex), Цвета, Граница, Типография, Контент, Данные, Действия
+- **`PropertySection.vue`** — reusable collapsible секция с ChevronDown/Right, `defaultOpen` prop, слот `header-right`
+- **WidgetRef Slot** (`WidgetRefConfigPanel.vue`) — WidgetRef-нода теперь «слот»: ориентация row/column, список виджетов с DnD, добавление через Select + кнопку; хранится в `widgetRefIds: [{ id, name }]`; backward-compat с `widgetRefId`
+- **`CanvasNode.vue` (WidgetRef)** — показывает Badges с именами всех виджетов слота вместо заглушки
+- **`PreviewNode.vue` (WidgetRef)** — загружает и рендерит все виджеты слота в flex-контейнере с `slotOrientation`
+
 ### Готово и работает ✅ (база данных проекта)
 - **Per-project Supabase** — каждый проект хранит свои `supabase_url` + `supabase_anon_key` в `ff_projects`
 - **DatabasePanel** (`src/components/projects/DatabasePanel.vue`) — Sheet-панель в ProjectDetailView: ввод URL + anon key, кнопка «Подключить», проверка соединения, список таблиц из OpenAPI Supabase
@@ -442,7 +482,6 @@ const projectIdRef = inject<ComputedRef<string> | Ref<string>>('projectId', ref(
 - **Fallback** — при отсутствии подключения все компоненты используют глобальный Supabase клиент (текущее поведение)
 
 ### Не реализовано / следующие задачи ❌
-- **Назначение виджетов в слоты** страницы (ff_pages.content) — прямое назначение в slot ещё нет
 - **Публичный рендерер** (PublicPageView — рендер страницы для конечного пользователя)
 - **Библиотека виджетов** с предустановленными элементами
 - **Кастомные действия** (ff_custom_actions — таблица есть, UI нет)
@@ -600,6 +639,42 @@ Service_role JWT генерируется из JWT_SECRET через HMAC-SHA256
 - **`src/components/widgets/PreviewNode.vue`** — inject `dataService` (ShallowRef) с fallback; `dataService.value.fetchData()` вместо прямого вызова
 - build: ✅ 0 ошибок TypeScript (2472 модуля)
 
+### 2026-02-22 — Слоты страницы + палитра цветов + PropertiesPanel редизайн (AI: Claude Sonnet 4.6)
+
+#### Множественные виджеты в слоте страницы
+- **`PageEditorView.vue`** — полный рефактор: каждый слот хранит `[{ widgetId, order }]`, поддержка DnD переупорядочивания, ориентация row/column, фон слота
+- **`PagePreviewView.vue`** — рендерит все виджеты слота через `<WidgetRenderer>`, flex-контейнер с `slotOrientation` + `backgroundColor` из `_settings`
+- **`src/stores/projects.store.ts`** — добавлено `slotSettings: {}` в `mapPage()`
+- **`src/types/projects.ts`** — тип `slotSettings` обновлён: `Record<string, { orientation, backgroundColor? }>`; добавлено `palette?: PaletteColor[]`
+- build: ✅ 0 ошибок TypeScript
+
+#### Палитра цветов проекта
+- **`src/types/palette.ts`** (NEW) — `PaletteColor`, `ColorGroup`, `DEFAULT_PALETTE` (13 цветов), `COLOR_GROUP_LABELS`, `COLOR_GROUPS`
+- **`src/types/index.ts`** — добавлен `export * from './palette'`
+- **`src/stores/palette.store.ts`** (NEW) — Pinia store: `load(pid)`, `save()`, `addColor(group)`, `removeColor(id)`, `updateColor(id, patch)`, `reset()`; graceful fallback на `DEFAULT_PALETTE` при отсутствии колонки
+- **`src/components/color-picker/ColorPickerInput.vue`** (NEW) — унифицированный пикер: swatch + hex input + inline palette panel; `modelValue`, `placeholder`, `allowClear` props; группировка по ColorGroup; light/dark toggle
+- **`src/views/projects/ProjectColorsView.vue`** (NEW) — управление палитрой; split light/dark карточки, inline editor, миграционный баннер с SQL
+- **`src/router/index.ts`** — маршрут `/projects/:id/colors` → ProjectColorsView
+- **`src/views/projects/ProjectDetailView.vue`** — карточка «Цвета» (розовая, Palette icon)
+- **`src/views/widgets/WidgetEditorView.vue`** — `palette.load(projectId)` в `onMounted`
+- **`src/views/pages/PageEditorView.vue`** — `palette.load(project_id)` в `onMounted`
+- **SQL миграция**: `ALTER TABLE ff_projects ADD COLUMN IF NOT EXISTS color_palette jsonb;`
+- build: ✅ 0 ошибок TypeScript
+
+#### PropertiesPanel редизайн + ColorPickerInput интеграция
+- **`src/components/widget-builder/PropertySection.vue`** (NEW) — сворачиваемая секция: ChevronDown/Right, `defaultOpen`, `header-right` slot
+- **`src/components/widget-builder/PropertiesPanel.vue`** — убраны Tabs; единый скролл с PropertySection: Размер, Отступы, Расположение, Цвета, Граница, Типография, Контент, Данные, Действия
+- **`ColorsSection.vue`, `BorderSection.vue`, `IconSection.vue`, `RichTextSection.vue`** — заменены нативные color input + Input пары на `<ColorPickerInput>`
+
+#### WidgetRef как многовиджетный слот
+- **`src/types/widget-builder.ts`** — добавлены `widgetRefIds?: { id, name }[]`, `slotOrientation?: 'row' | 'column'` в `WidgetNodeProps`
+- **`src/composables/useWidgetTree.ts`** — DEFAULTS['WidgetRef']: `widgetRefIds: [], slotOrientation: 'column'`
+- **`src/stores/widget-builder.store.ts`** — `updateSlotItems(nodeId, items)`, инициализация `widgetRefIds` при `addWidgetRef*`
+- **`src/components/widget-builder/WidgetRefConfigPanel.vue`** — полная перезапись: ориентация row/column, DnD список с GripVertical, Select + «Добавить», backward compat с `widgetRefId`
+- **`src/components/widget-builder/CanvasNode.vue`** — Badges с именами виджетов слота
+- **`src/components/widgets/PreviewNode.vue`** — загрузка и рендер всех виджетов слота (Promise.all + flex-контейнер)
+- build: ✅ 0 ошибок TypeScript
+
 ### 2026-02-21 — Action System inline + межвиджетная видимость (AI: Claude Sonnet 4.6)
 - **`NodeActions` тип** — добавлен в `src/types/widget-builder.ts`: `Partial<Record<TriggerType, ActionStep[]>>`
 - **`WidgetNode.actions?`** — поле для хранения действий прямо на ноде (без отдельной таблицы БД)
@@ -652,6 +727,13 @@ Service_role JWT генерируется из JWT_SECRET через HMAC-SHA256
 
 ### 2026-02-21 — Удалён PROJECT_CONTEXT.md (избыточный файл)
 - Файл удалён как дублирующий PASSPORT.md; PASSPORT.md остаётся единственным источником истины
+
+### 2026-02-22 — Слоты, палитра цветов, PropertiesPanel редизайн
+- Множественные виджеты в слотах страницы + ориентация + фон
+- Палитра цветов проекта (FlutterFlow-style) + ColorPickerInput
+- PropertiesPanel: убраны табы → PropertySection-секции
+- WidgetRef как многовиджетный слот с DnD
+- PASSPORT.md обновлён, все изменения задокументированы
 </content>
 </file>
 </files>

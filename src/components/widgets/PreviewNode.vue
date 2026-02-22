@@ -47,6 +47,11 @@ function handleSubmit() {
   executeAll(props.node.actions?.onSubmit)
 }
 
+// ── WidgetRef / Slot runtime ───────────────────────────────────────────────
+const embeddedRoots   = ref<WidgetNode[]>([])
+const embeddedLoading = ref(false)
+const embeddedError   = ref<string | null>(null)
+
 // ── ListView runtime ───────────────────────────────────────────────────────
 const listRows         = ref<Record<string, unknown>[]>([])
 const listItemRoot     = ref<WidgetNode | null>(null)
@@ -86,6 +91,34 @@ onMounted(async () => {
   // Execute onInit actions for this node
   executeAll(props.node.actions?.onInit)
 
+  // ── WidgetRef / Slot: load all referenced widget trees in parallel ────────
+  if (props.node.type === 'WidgetRef') {
+    const ids = props.node.props.widgetRefIds?.map(x => x.id)
+      ?? (props.node.props.widgetRefId ? [props.node.props.widgetRefId] : [])
+    if (!ids.length) return
+    embeddedLoading.value = true
+    try {
+      const results = await Promise.all(
+        ids.map(id =>
+          supabase.from('ff_widgets').select('elements').eq('id', id).single()
+        )
+      )
+      embeddedRoots.value = results.flatMap(({ data, error }) => {
+        if (error || !data) return []
+        const raw = data.elements
+        if (Array.isArray(raw) && raw[0]) return [raw[0] as WidgetNode]
+        if (raw && (raw as { v?: number }).v === 2)
+          return [(raw as unknown as WidgetElementsV2).root as WidgetNode]
+        return []
+      })
+    } catch (e: unknown) {
+      embeddedError.value = (e as Error).message
+    } finally {
+      embeddedLoading.value = false
+    }
+    return
+  }
+
   if (props.node.type !== 'ListView') return
 
   const cfg = props.node.props.listViewConfig as ListViewConfig | undefined
@@ -120,7 +153,7 @@ onMounted(async () => {
     } else if (raw && (raw as { v?: number }).v === 2) {
       const v2 = raw as unknown as WidgetElementsV2
       listItemRoot.value = v2.root as WidgetNode
-      listItemBindings.value = v2.listItemMeta.dataBindings
+      listItemBindings.value = v2.listItemMeta?.dataBindings ?? []
     }
   } catch (e: unknown) {
     listError.value = (e as Error).message
@@ -214,6 +247,21 @@ function spanStyle(span: RichTextSpan): Record<string, string> {
       :size="node.props.iconSize ?? 24"
       :color="node.props.iconColor || 'currentColor'"
       :stroke-width="node.props.iconStrokeWidth ?? 2"
+    />
+  </div>
+
+  <!-- WidgetRef / Slot — render all embedded widgets -->
+  <div
+    v-else-if="node.type === 'WidgetRef'"
+    :style="{ ...nodeStyle(), display: 'flex', flexDirection: node.props.slotOrientation ?? 'column' }"
+  >
+    <div v-if="embeddedLoading" class="text-xs text-gray-400 text-center py-2 animate-pulse">Загрузка...</div>
+    <div v-else-if="embeddedError" class="text-xs text-red-400 text-center py-2">{{ embeddedError }}</div>
+    <PreviewNode
+      v-else
+      v-for="(root, i) in embeddedRoots"
+      :key="i"
+      :node="root"
     />
   </div>
 

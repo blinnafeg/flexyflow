@@ -14,8 +14,10 @@ const loading = ref(true)
 const error   = ref<string | null>(null)
 const layout  = ref<Layout | null>(null)
 
-// slotName → widgetId
-const slotWidgetIds = ref<Record<string, string>>({})
+// slotName → sorted widget entries
+const slotWidgets = ref<Record<string, { widgetId: string; order: number }[]>>({})
+// slotName → orientation
+const slotSettings = ref<Record<string, { orientation: 'row' | 'column' }>>({})
 
 // Per-project data service — provided to all nested WidgetRenderer / PreviewNode
 const pageDataService = shallowRef<DataSourceService>(new DataSourceService())
@@ -37,6 +39,14 @@ function slotStyle(slot: GridSlot): Record<string, string> {
   return {
     gridColumn: `${slot.col} / ${slot.col + slot.colSpan}`,
     gridRow:    `${slot.row} / ${slot.row + slot.rowSpan}`,
+  }
+}
+
+function slotFlexStyle(slotName: string): Record<string, string> {
+  const orientation = slotSettings.value[slotName]?.orientation ?? 'column'
+  return {
+    display: 'flex',
+    flexDirection: orientation,
   }
 }
 
@@ -84,14 +94,19 @@ onMounted(async () => {
       }
     }
 
-    // Map slotName → widgetId
-    const content = (pageData.content ?? {}) as Record<string, { widgetId: string; order: number }[]>
-    const result: Record<string, string> = {}
-    for (const [slotName, assignments] of Object.entries(content)) {
-      const wid = assignments[0]?.widgetId
-      if (wid) result[slotName] = wid
+    // Parse content: separate _settings from widget assignments
+    const rawContent = (pageData.content ?? {}) as Record<string, unknown>
+    slotSettings.value = (rawContent['_settings'] ?? {}) as Record<string, { orientation: 'row' | 'column' }>
+
+    const widgets: Record<string, { widgetId: string; order: number }[]> = {}
+    for (const [key, value] of Object.entries(rawContent)) {
+      if (key !== '_settings' && Array.isArray(value) && value.length > 0) {
+        widgets[key] = (value as { widgetId: string; order: number }[])
+          .slice()
+          .sort((a, b) => a.order - b.order)
+      }
     }
-    slotWidgetIds.value = result
+    slotWidgets.value = widgets
 
   } catch (e: unknown) {
     error.value = (e as Error).message
@@ -140,11 +155,16 @@ onMounted(async () => {
       <div
         v-for="slot in layout.slots"
         :key="slot.id"
-        :style="slotStyle(slot)"
+        :style="{
+          ...slotStyle(slot),
+          ...slotFlexStyle(slot.name),
+          backgroundColor: slotSettings[slot.name]?.backgroundColor || undefined,
+        }"
       >
         <WidgetRenderer
-          v-if="slotWidgetIds[slot.name]"
-          :widget-id="slotWidgetIds[slot.name]"
+          v-for="entry in (slotWidgets[slot.name] ?? [])"
+          :key="entry.widgetId"
+          :widget-id="entry.widgetId"
         />
       </div>
     </div>

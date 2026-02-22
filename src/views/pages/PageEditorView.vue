@@ -11,8 +11,10 @@ import { Separator } from '@/components/ui/separator'
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
-import { ArrowLeft, Save, Globe, Loader2, Settings, X, LayoutGrid, Puzzle, ExternalLink, Eye, Zap, Plus } from 'lucide-vue-next'
+import { ArrowLeft, Save, Globe, Loader2, Settings, X, LayoutGrid, Puzzle, ExternalLink, Eye, Zap, Plus, GripVertical } from 'lucide-vue-next'
 import { toast } from 'vue-sonner'
+import { usePaletteStore } from '@/stores/palette.store'
+import ColorPickerInput from '@/components/color-picker/ColorPickerInput.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -27,6 +29,19 @@ const layout = ref<Layout | null>(null)
 const availableLayouts = ref<Layout[]>([])
 const availableWidgets = ref<{ id: string; name: string }[]>([])
 const selectedSlot = ref<GridSlot | null>(null)
+
+// Per-slot settings: slotName → { orientation, backgroundColor? }
+type SlotSettingEntry = { orientation: 'row' | 'column'; backgroundColor?: string }
+const slotSettings = ref<Record<string, SlotSettingEntry>>({})
+
+const palette = usePaletteStore()
+
+// DnD state for the current slot's widget list
+const dragIndex = ref<number | null>(null)
+const dropIndex = ref<number | null>(null)
+
+// Widget selected in the "add" section
+const selectedWidgetToAdd = ref<string>('')
 
 interface SlotWorkflow { id: string; name: string; trigger: string; steps: unknown[] }
 const slotWorkflows = ref<SlotWorkflow[]>([])
@@ -52,24 +67,44 @@ function slotStyle(slot: GridSlot): Record<string, string> {
   }
 }
 
-function getSlotWidgetId(slotName: string): string | null {
-  const items = page.value?.content[slotName]
-  return items?.[0]?.widgetId ?? null
+/** Sorted list of widget assignments for a slot */
+function getSlotWidgets(slotName: string): { widgetId: string; order: number }[] {
+  return (page.value?.content[slotName] ?? []).slice().sort((a, b) => a.order - b.order)
 }
 
-function getSlotWidgetName(slotName: string): string | null {
-  const wid = getSlotWidgetId(slotName)
-  if (!wid) return null
-  return availableWidgets.value.find(w => w.id === wid)?.name ?? null
+function getSlotOrientation(slotName: string): 'row' | 'column' {
+  return slotSettings.value[slotName]?.orientation ?? 'column'
 }
 
-async function loadSlotWorkflows(widgetId: string) {
-  loadingSlotWorkflows.value = true
+function getWidgetName(widgetId: string): string {
+  return availableWidgets.value.find(w => w.id === widgetId)?.name ?? widgetId
+}
+
+/** Widgets available to add (not yet in the selected slot) */
+const availableToAdd = computed(() => {
+  if (!selectedSlot.value) return availableWidgets.value
+  const assigned = new Set(getSlotWidgets(selectedSlot.value.name).map(w => w.widgetId))
+  return availableWidgets.value.filter(w => !assigned.has(w.id))
+})
+
+/** Persist current content + slotSettings to DB immediately */
+async function persistContent() {
+  if (!page.value) return
+  const { error } = await supabase
+    .from('ff_pages')
+    .update({ content: { ...(page.value.content as object), _settings: slotSettings.value } })
+    .eq('id', pageId)
+  if (error) toast.error(error.message)
+}
+
+async function loadSlotWorkflows(widgetIds: string[]) {
   slotWorkflows.value = []
+  if (!widgetIds.length) return
+  loadingSlotWorkflows.value = true
   const { data } = await supabase
     .from('ff_workflows')
     .select('id, name, trigger, steps')
-    .eq('widget_id', widgetId)
+    .in('widget_id', widgetIds)
     .order('created_at', { ascending: false })
   slotWorkflows.value = data ?? []
   loadingSlotWorkflows.value = false
@@ -96,9 +131,10 @@ async function createSlotWorkflow(widgetId: string) {
 function selectSlot(slot: GridSlot) {
   selectedSlot.value = slot
   settingsOpen.value = false
-  const wid = getSlotWidgetId(slot.name)
-  if (wid) loadSlotWorkflows(wid)
-  else slotWorkflows.value = []
+  selectedWidgetToAdd.value = ''
+  dragIndex.value = null
+  dropIndex.value = null
+  loadSlotWorkflows(getSlotWidgets(slot.name).map(w => w.widgetId))
 }
 
 function openSettings() {
@@ -133,13 +169,25 @@ onMounted(async () => {
       .single()
     if (pe) throw pe
 
+    // Separate _settings from widget assignments
+    const rawContent = (pageData.content ?? {}) as Record<string, unknown>
+    const extractedSettings = (rawContent['_settings'] ?? {}) as Record<string, { orientation: 'row' | 'column' }>
+    const cleanContent: Record<string, { widgetId: string; order: number }[]> = {}
+    for (const [key, value] of Object.entries(rawContent)) {
+      if (key !== '_settings' && Array.isArray(value)) {
+        cleanContent[key] = value as { widgetId: string; order: number }[]
+      }
+    }
+    slotSettings.value = extractedSettings
+
     page.value = {
       id: pageData.id,
       projectId: pageData.project_id,
       name: pageData.name,
       slug: pageData.slug,
       layoutId: pageData.layout_id,
-      content: pageData.content ?? {},
+      content: cleanContent,
+      slotSettings: extractedSettings,
       isPublished: pageData.is_published ?? false,
       createdAt: pageData.created_at,
       updatedAt: pageData.updated_at,
@@ -176,6 +224,9 @@ onMounted(async () => {
       id: w.id as string,
       name: w.name as string,
     }))
+
+    // Load project color palette (non-blocking)
+    palette.load(pageData.project_id)
   } catch (e: unknown) {
     toast.error((e as Error).message)
   } finally {
@@ -202,22 +253,93 @@ async function assignLayout(layoutId: string | null) {
   }
 }
 
-// Assign widget to slot
-async function assignWidget(slotName: string, widgetId: string | null) {
-  if (!page.value) return
-  const content = { ...page.value.content }
-  if (widgetId) {
-    content[slotName] = [{ widgetId, order: 0 }]
-  } else {
-    delete content[slotName]
+// Add the selected widget to the current slot
+async function addWidgetToSlot() {
+  if (!page.value || !selectedSlot.value || !selectedWidgetToAdd.value) return
+  const slotName = selectedSlot.value.name
+  const existing = getSlotWidgets(slotName)
+  if (existing.some(w => w.widgetId === selectedWidgetToAdd.value)) {
+    toast.error('Виджет уже добавлен в слот')
+    return
   }
-  page.value.content = content
-  const { error } = await supabase
-    .from('ff_pages')
-    .update({ content })
-    .eq('id', pageId)
-  if (error) toast.error(error.message)
-  else toast.success(widgetId ? 'Виджет назначен' : 'Виджет снят')
+  const newOrder = existing.length > 0 ? Math.max(...existing.map(w => w.order)) + 1 : 0
+  page.value.content = {
+    ...page.value.content,
+    [slotName]: [...existing, { widgetId: selectedWidgetToAdd.value, order: newOrder }],
+  }
+  selectedWidgetToAdd.value = ''
+  await persistContent()
+  toast.success('Виджет добавлен')
+  loadSlotWorkflows(getSlotWidgets(slotName).map(w => w.widgetId))
+}
+
+// Remove a widget from the slot
+async function removeWidgetFromSlot(slotName: string, widgetId: string) {
+  if (!page.value) return
+  const updated = getSlotWidgets(slotName)
+    .filter(w => w.widgetId !== widgetId)
+    .map((w, i) => ({ ...w, order: i }))
+  if (updated.length === 0) {
+    const content = { ...page.value.content }
+    delete content[slotName]
+    page.value.content = content
+  } else {
+    page.value.content = { ...page.value.content, [slotName]: updated }
+  }
+  await persistContent()
+  toast.success('Виджет убран')
+  loadSlotWorkflows(getSlotWidgets(slotName).map(w => w.widgetId))
+}
+
+// ── DnD ──────────────────────────────────────────────────────────────────────
+function onDragStart(index: number) {
+  dragIndex.value = index
+}
+
+function onDragOver(e: DragEvent, index: number) {
+  e.preventDefault()
+  dropIndex.value = index
+}
+
+async function onDrop(slotName: string) {
+  if (dragIndex.value === null || dropIndex.value === null || !page.value) return
+  if (dragIndex.value !== dropIndex.value) {
+    const items = [...getSlotWidgets(slotName)]
+    const [dragged] = items.splice(dragIndex.value, 1)
+    items.splice(dropIndex.value, 0, dragged)
+    page.value.content = {
+      ...page.value.content,
+      [slotName]: items.map((w, i) => ({ ...w, order: i })),
+    }
+    await persistContent()
+  }
+  dragIndex.value = null
+  dropIndex.value = null
+}
+
+function onDragEnd() {
+  dragIndex.value = null
+  dropIndex.value = null
+}
+
+// Set orientation for a slot
+async function setSlotOrientation(slotName: string, orientation: 'row' | 'column') {
+  slotSettings.value = {
+    ...slotSettings.value,
+    [slotName]: { ...slotSettings.value[slotName], orientation },
+  }
+  if (page.value) page.value.slotSettings = slotSettings.value
+  await persistContent()
+}
+
+// Set background color for a slot
+async function setSlotBgColor(slotName: string, color: string) {
+  slotSettings.value = {
+    ...slotSettings.value,
+    [slotName]: { ...slotSettings.value[slotName], backgroundColor: color || undefined },
+  }
+  if (page.value) page.value.slotSettings = slotSettings.value
+  await persistContent()
 }
 
 // Toggle published
@@ -250,7 +372,7 @@ async function save() {
       .update({
         name: page.value.name,
         slug: page.value.slug,
-        content: page.value.content,
+        content: { ...(page.value.content as object), _settings: slotSettings.value },
         is_published: page.value.isPublished,
       })
       .eq('id', pageId)
@@ -325,14 +447,34 @@ async function save() {
             :class="selectedSlot?.id === slot.id
               ? 'border-primary/70 bg-primary/5'
               : 'border-border/60 hover:border-border hover:bg-accent/20'"
-            :style="slotStyle(slot)"
+            :style="{
+              ...slotStyle(slot),
+              backgroundColor: slotSettings[slot.name]?.backgroundColor || undefined,
+            }"
             @click="selectSlot(slot)"
           >
-            <!-- Has widget assigned -->
-            <div v-if="getSlotWidgetName(slot.name)" class="absolute inset-0 flex flex-col items-center justify-center gap-1.5">
-              <div class="flex items-center gap-1.5 text-sm font-medium">
-                <Puzzle class="size-4 text-purple-500" />
-                {{ getSlotWidgetName(slot.name) }}
+            <!-- Has widgets assigned -->
+            <div
+              v-if="getSlotWidgets(slot.name).length > 0"
+              class="absolute inset-0 flex flex-col items-center justify-center gap-1.5 p-2 overflow-hidden"
+            >
+              <div
+                v-if="getSlotWidgets(slot.name).length === 1"
+                class="flex items-center gap-1.5 text-sm font-medium"
+              >
+                <Puzzle class="size-4 text-purple-500 shrink-0" />
+                <span class="truncate">{{ getWidgetName(getSlotWidgets(slot.name)[0].widgetId) }}</span>
+              </div>
+              <div v-else class="flex flex-wrap gap-1 justify-center">
+                <Badge
+                  v-for="entry in getSlotWidgets(slot.name)"
+                  :key="entry.widgetId"
+                  variant="secondary"
+                  class="text-[10px] flex items-center gap-1"
+                >
+                  <Puzzle class="size-2.5 text-purple-500" />
+                  {{ getWidgetName(entry.widgetId) }}
+                </Badge>
               </div>
               <Badge variant="outline" class="text-xs opacity-60">{{ slot.label || slot.name }}</Badge>
             </div>
@@ -371,30 +513,107 @@ async function save() {
       </div>
 
       <div class="flex-1 overflow-y-auto p-4 space-y-4">
-        <!-- Current widget -->
-        <div class="space-y-2">
-          <Label class="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Виджет</Label>
 
-          <div v-if="availableWidgets.length === 0" class="text-xs text-muted-foreground py-1">
+        <!-- Widgets in slot -->
+        <div class="space-y-2">
+          <!-- Header + orientation toggle -->
+          <div class="flex items-center justify-between">
+            <Label class="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+              Виджеты ({{ getSlotWidgets(selectedSlot.name).length }})
+            </Label>
+            <div class="flex items-center gap-0.5">
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                :class="getSlotOrientation(selectedSlot.name) === 'column' ? 'bg-accent text-accent-foreground' : ''"
+                title="Вертикально"
+                @click="setSlotOrientation(selectedSlot.name, 'column')"
+              >
+                <span class="text-[11px] font-mono leading-none">↕</span>
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                :class="getSlotOrientation(selectedSlot.name) === 'row' ? 'bg-accent text-accent-foreground' : ''"
+                title="Горизонтально"
+                @click="setSlotOrientation(selectedSlot.name, 'row')"
+              >
+                <span class="text-[11px] font-mono leading-none">↔</span>
+              </Button>
+            </div>
+          </div>
+
+          <!-- Background color -->
+          <div class="space-y-1 pt-1">
+            <Label class="text-xs text-muted-foreground">Цвет фона</Label>
+            <ColorPickerInput
+              :model-value="slotSettings[selectedSlot.name]?.backgroundColor ?? ''"
+              placeholder="transparent"
+              :allow-clear="true"
+              @update:model-value="setSlotBgColor(selectedSlot!.name, $event)"
+            />
+          </div>
+
+          <!-- DnD list -->
+          <div v-if="getSlotWidgets(selectedSlot.name).length === 0" class="text-xs text-muted-foreground py-1">
+            Нет виджетов. Добавьте ниже.
+          </div>
+          <div v-else class="space-y-1">
+            <div
+              v-for="(entry, idx) in getSlotWidgets(selectedSlot.name)"
+              :key="entry.widgetId"
+              draggable="true"
+              class="flex items-center gap-2 px-2 py-1.5 rounded-md border bg-background hover:bg-accent/40 transition-colors select-none"
+              :class="dropIndex === idx ? 'ring-2 ring-primary/50' : ''"
+              @dragstart="onDragStart(idx)"
+              @dragover="onDragOver($event, idx)"
+              @drop="onDrop(selectedSlot!.name)"
+              @dragend="onDragEnd"
+            >
+              <GripVertical class="size-3.5 text-muted-foreground cursor-grab shrink-0" />
+              <Puzzle class="size-3.5 text-purple-500 shrink-0" />
+              <span class="flex-1 text-xs truncate">{{ getWidgetName(entry.widgetId) }}</span>
+              <button
+                class="text-muted-foreground/60 hover:text-destructive transition-colors shrink-0"
+                @click.stop="removeWidgetFromSlot(selectedSlot!.name, entry.widgetId)"
+              >
+                <X class="size-3.5" />
+              </button>
+            </div>
+          </div>
+
+          <!-- Open in editor link for single widget -->
+          <div v-if="getSlotWidgets(selectedSlot.name).length === 1" class="pt-0.5">
+            <Button
+              variant="outline"
+              size="sm"
+              class="w-full text-xs h-7"
+              @click="router.push(`/widgets/${getSlotWidgets(selectedSlot!.name)[0].widgetId}/edit`)"
+            >
+              <ExternalLink class="size-3.5 mr-1" />
+              Открыть в редакторе
+            </Button>
+          </div>
+
+          <!-- Add widget row -->
+          <div v-if="availableWidgets.length === 0" class="text-xs text-muted-foreground pt-1">
             Нет виджетов в проекте.
             <button
               class="text-primary underline"
-              @click="router.push(`/projects/${page.projectId}/widgets`)"
+              @click="router.push(`/projects/${page!.projectId}/widgets`)"
             >Создать виджет</button>
           </div>
-
-          <template v-else>
+          <div v-else-if="availableToAdd.length > 0 || !selectedWidgetToAdd" class="flex gap-2 pt-1">
             <Select
-              :model-value="getSlotWidgetId(selectedSlot.name) ?? '__none__'"
-              @update:model-value="assignWidget(selectedSlot!.name, $event === '__none__' ? null : $event)"
+              :model-value="selectedWidgetToAdd"
+              @update:model-value="selectedWidgetToAdd = String($event ?? '')"
             >
-              <SelectTrigger class="h-8 text-sm">
-                <SelectValue placeholder="Выберите виджет..." />
+              <SelectTrigger class="h-8 text-xs flex-1">
+                <SelectValue placeholder="Добавить виджет..." />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="__none__">— Без виджета —</SelectItem>
                 <SelectItem
-                  v-for="w in availableWidgets"
+                  v-for="w in availableToAdd"
                   :key="w.id"
                   :value="w.id"
                 >
@@ -405,26 +624,21 @@ async function save() {
                 </SelectItem>
               </SelectContent>
             </Select>
-
-            <!-- Link to edit current widget -->
-            <div v-if="getSlotWidgetId(selectedSlot.name)" class="pt-1">
-              <Button
-                variant="outline"
-                size="sm"
-                class="w-full text-xs"
-                @click="router.push(`/widgets/${getSlotWidgetId(selectedSlot!.name)}/edit`)"
-              >
-                <ExternalLink class="size-3.5 mr-1" />
-                Открыть в редакторе
-              </Button>
-            </div>
-          </template>
+            <Button
+              size="sm"
+              class="h-8 shrink-0 px-2"
+              :disabled="!selectedWidgetToAdd"
+              @click="addWidgetToSlot"
+            >
+              <Plus class="size-3.5" />
+            </Button>
+          </div>
         </div>
 
         <Separator />
 
-        <!-- Workflows for slot's widget -->
-        <div v-if="getSlotWidgetId(selectedSlot.name)" class="space-y-2">
+        <!-- Workflows for widgets in slot -->
+        <div v-if="getSlotWidgets(selectedSlot.name).length > 0" class="space-y-2">
           <div class="flex items-center justify-between">
             <Label class="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
               <Zap class="size-3 inline mr-1" />Действия
@@ -433,7 +647,7 @@ async function save() {
               variant="ghost"
               size="icon-sm"
               title="Новый воркфлоу"
-              @click="createSlotWorkflow(getSlotWidgetId(selectedSlot.name)!)"
+              @click="createSlotWorkflow(getSlotWidgets(selectedSlot!.name)[0].widgetId)"
             >
               <Plus class="size-3.5" />
             </Button>
@@ -443,10 +657,10 @@ async function save() {
             Загрузка...
           </div>
           <div v-else-if="slotWorkflows.length === 0" class="text-xs text-muted-foreground py-1">
-            Нет воркфлоу для этого виджета.
+            Нет воркфлоу.
             <button
               class="text-primary underline ml-0.5"
-              @click="createSlotWorkflow(getSlotWidgetId(selectedSlot.name)!)"
+              @click="createSlotWorkflow(getSlotWidgets(selectedSlot!.name)[0].widgetId)"
             >Создать</button>
           </div>
           <div v-else class="space-y-1">
@@ -495,7 +709,7 @@ async function save() {
           <Input
             :model-value="page.name"
             class="h-8 text-sm"
-            @update:model-value="page.name = $event"
+            @update:model-value="page.name = String($event)"
           />
         </div>
 
@@ -508,7 +722,7 @@ async function save() {
               :model-value="page.slug"
               class="h-8 text-sm"
               placeholder="my-page"
-              @update:model-value="page.slug = $event"
+              @update:model-value="page.slug = String($event)"
             />
           </div>
         </div>
@@ -530,7 +744,7 @@ async function save() {
           <template v-else>
             <Select
               :model-value="page?.layoutId ?? '__none__'"
-              @update:model-value="assignLayout($event === '__none__' ? null : $event)"
+              @update:model-value="assignLayout(String($event) === '__none__' ? null : String($event))"
             >
               <SelectTrigger class="h-8 text-sm">
                 <SelectValue placeholder="Выберите макет..." />

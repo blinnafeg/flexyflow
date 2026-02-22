@@ -7,6 +7,7 @@ import { Link } from 'lucide-vue-next'
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
+import ColorPickerInput from '@/components/color-picker/ColorPickerInput.vue'
 
 const store = useWidgetBuilderStore()
 const node = computed(() => store.selectedNode!)
@@ -37,7 +38,7 @@ function toggleLinked() {
   <div class="space-y-4">
     <!-- Border -->
     <div class="space-y-2">
-      <p class="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Граница</p>
+      <p class="text-xs text-muted-foreground font-medium">Граница</p>
       <div class="grid grid-cols-2 gap-1.5">
         <div>
           <Label class="text-[10px] text-muted-foreground">Толщина (px)</Label>
@@ -60,13 +61,10 @@ function toggleLinked() {
         </div>
         <div class="col-span-2">
           <Label class="text-[10px] text-muted-foreground">Цвет</Label>
-          <div class="flex items-center gap-1.5 mt-0.5">
-            <input
-              type="color" :value="node.props.border.color" class="h-7 w-10 cursor-pointer rounded border"
-              @input="updateBorder({ color: ($event.target as HTMLInputElement).value })"
-            />
-            <Input
-              :model-value="node.props.border.color" class="h-7 text-xs font-mono"
+          <div class="mt-0.5">
+            <ColorPickerInput
+              :model-value="node.props.border.color"
+              placeholder="#000000"
               @update:model-value="updateBorder({ color: $event })"
             />
           </div>
@@ -77,7 +75,7 @@ function toggleLinked() {
     <!-- Border radius -->
     <div class="space-y-2">
       <div class="flex items-center justify-between">
-        <p class="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Скругление углов</p>
+        <p class="text-xs text-muted-foreground font-medium">Скругление углов</p>
         <button
           :class="node.props.borderRadius.linked ? 'text-primary' : 'text-muted-foreground'"
           title="Связать углы"
@@ -85,7 +83,6 @@ function toggleLinked() {
         ><Link class="size-3" /></button>
       </div>
 
-      <!-- Linked: single input -->
       <div v-if="node.props.borderRadius.linked">
         <Input
           :model-value="node.props.borderRadius.topLeft" type="number" min="0" class="h-7 text-xs"
@@ -94,7 +91,6 @@ function toggleLinked() {
         />
       </div>
 
-      <!-- Unlinked: 4 corners -->
       <div v-else class="grid grid-cols-2 gap-1.5">
         <div v-for="[key, label] in [['topLeft','↖ TL'],['topRight','↗ TR'],['bottomLeft','↙ BL'],['bottomRight','↘ BR']]" :key="key">
           <Label class="text-[10px] text-muted-foreground">{{ label }}</Label>

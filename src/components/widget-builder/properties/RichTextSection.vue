@@ -8,8 +8,9 @@ import { Input } from '@/components/ui/input'
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
-import { Trash2, Plus, Bold, Italic, Underline } from 'lucide-vue-next'
+import { Trash2, Plus, Italic, Underline } from 'lucide-vue-next'
 import FontPicker from './FontPicker.vue'
+import ColorPickerInput from '@/components/color-picker/ColorPickerInput.vue'
 
 const store = useWidgetBuilderStore()
 const node = computed(() => store.selectedNode!)
@@ -25,7 +26,7 @@ function updateSpan(id: string, patch: Partial<RichTextSpan>) {
 }
 
 function removeSpan(id: string) {
-  if (spans.value.length <= 1) return  // keep at least one
+  if (spans.value.length <= 1) return
   setSpans(spans.value.filter(s => s.id !== id))
 }
 
@@ -36,15 +37,13 @@ function addSpan() {
 
 <template>
   <div class="space-y-3">
-    <p class="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Спаны (RichText)</p>
-
     <div class="space-y-2">
       <div
         v-for="(span, idx) in spans"
         :key="span.id"
         class="border rounded-md p-2 space-y-2 bg-muted/20"
       >
-        <!-- Header row: index + delete -->
+        <!-- Header row -->
         <div class="flex items-center justify-between">
           <span class="text-xs font-medium text-muted-foreground">Спан {{ idx + 1 }}</span>
           <button
@@ -67,34 +66,28 @@ function addSpan() {
           />
         </div>
 
-        <!-- Color + font size -->
-        <div class="grid grid-cols-2 gap-1.5">
-          <div>
-            <Label class="text-xs">Цвет</Label>
-            <div class="flex items-center gap-1 mt-0.5">
-              <input
-                type="color"
-                :value="span.color || '#111827'"
-                class="h-7 w-8 cursor-pointer rounded border"
-                @input="updateSpan(span.id, { color: ($event.target as HTMLInputElement).value })"
-              />
-              <Input
-                :model-value="span.color || ''"
-                class="h-7 text-xs font-mono flex-1"
-                placeholder="#111827"
-                @update:model-value="updateSpan(span.id, { color: $event || undefined })"
-              />
-            </div>
-          </div>
-          <div>
-            <Label class="text-xs">Размер (px)</Label>
-            <Input
-              :model-value="span.fontSize ?? ''"
-              type="number" min="1" class="h-7 text-xs mt-0.5"
-              placeholder="авто"
-              @update:model-value="updateSpan(span.id, { fontSize: $event ? Number($event) : undefined })"
+        <!-- Color -->
+        <div>
+          <Label class="text-xs">Цвет</Label>
+          <div class="mt-0.5">
+            <ColorPickerInput
+              :model-value="span.color || ''"
+              placeholder="#111827"
+              :allow-clear="true"
+              @update:model-value="updateSpan(span.id, { color: $event || undefined })"
             />
           </div>
+        </div>
+
+        <!-- Font size -->
+        <div>
+          <Label class="text-xs">Размер (px)</Label>
+          <Input
+            :model-value="span.fontSize ?? ''"
+            type="number" min="1" class="h-7 text-xs mt-0.5"
+            placeholder="авто"
+            @update:model-value="updateSpan(span.id, { fontSize: $event ? Number($event) : undefined })"
+          />
         </div>
 
         <!-- Weight -->
@@ -128,7 +121,7 @@ function addSpan() {
           </div>
         </div>
 
-        <!-- Italic + Underline toggles -->
+        <!-- Italic + Underline -->
         <div class="flex gap-1">
           <button
             class="flex-1 h-7 flex items-center justify-center rounded border text-xs transition-colors gap-1"
@@ -148,7 +141,6 @@ function addSpan() {
       </div>
     </div>
 
-    <!-- Add span -->
     <button
       class="w-full h-7 text-xs border border-dashed rounded flex items-center justify-center gap-1 hover:bg-accent transition-colors text-muted-foreground"
       @click="addSpan"
